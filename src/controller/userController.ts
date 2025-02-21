@@ -1,0 +1,680 @@
+import { Request, Response } from "express";
+import bcrypt from "bcrypt";
+import User from "../models/user";
+import jwt from 'jsonwebtoken'
+import mongoose from "mongoose";
+import Dorm from "../models/dorm";
+import { Application } from "../models/applications";
+
+// Secret key for JWT (store this in an .env file)
+const JWT_SECRET = process.env.JWT_SECRET || "joseph123";
+
+
+// Extend Express Request type to include userId
+declare global {
+    namespace Express {
+        interface Request {
+            userId?: string;
+        }
+    }
+}
+
+const createUser = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const { firstName, middleName, lastName, email, password, confirmPassword, phone, studentId, role } = req.body;
+        console.log("Received request body:", req.body);
+
+        // Validate required fields
+        if (!firstName || !lastName || !email || !password || !confirmPassword || !phone) {
+            return res.status(400).json({
+                success: false,
+                message: "All required fields must be filled.",
+            });
+        }
+
+
+        // Normalize email and check if user exists
+        const normalizedEmail = email.toLowerCase();
+        const existingUser = await User.findOne({ email: normalizedEmail });
+
+        if (existingUser) {
+            return res.status(400).json({
+                success: false,
+                message: "User with this email already exists.",
+            });
+        }
+
+        // Hash password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Create new user
+        const newUser = new User({
+            firstName,
+            middleName: middleName || "",
+            lastName,
+            email: normalizedEmail,
+            password: hashedPassword,
+            phone,
+            studentId: studentId || "",
+            role: role || "student",
+        });
+
+        await newUser.save();
+        console.log(`User created successfully: ${newUser._id}`);
+
+        return res.status(201).json({
+            success: true,
+            message: "User created successfully.",
+            user: {
+                _id: newUser._id,
+                firstName: newUser.firstName,
+                middleName: newUser.middleName,
+                lastName: newUser.lastName,
+                email: newUser.email,
+                phone: newUser.phone,
+                studentId: newUser.studentId,
+            },
+        });
+    } catch (error: any) {
+        console.error("Error creating user:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: error.message,
+        });
+    }
+};
+
+
+const signInUser = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const { email, password } = req.body;
+        console.log("Sign-in request received:", req.body);
+
+        // Validate required fields
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Email and password are required.",
+            });
+        }
+
+        // Normalize email
+        const normalizedEmail = email.toLowerCase();
+
+        // Find user by email
+        const user = await User.findOne({ email: normalizedEmail });
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid email or password.",
+            });
+        }
+
+        // Compare passwords
+        const isMatch = await bcrypt.compare(password, user.password);
+
+        if (!isMatch) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid email or password.",
+            });
+        }
+
+        // Generate JWT token
+        const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
+            expiresIn: "7d", // Token expires in 7 days
+        });
+
+        console.log(`User signed in successfully: ${user._id}`);
+
+        return res.status(200).json({
+            success: true,
+            message: "Sign-in successful.",
+            token,
+            user: {
+                _id: user._id,
+                firstName: user.firstName,
+                middleName: user.middleName,
+                lastName: user.lastName,
+                email: user.email,
+                phone: user.phone,
+                studentId: user.studentId,
+                role: user.role,
+            },
+        });
+    } catch (error: any) {
+        console.error("Error signing in user:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: error.message,
+        });
+    }
+};
+
+
+
+const getAllStudents = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { page, limit, search, studentId } = req.query as { page: string, limit: string, search: string, studentId: string };
+
+        // If studentId is provided, fetch only that student
+        if (studentId) {
+            const students = await User.findOne({ studentId: studentId }).lean();
+            if (!students) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Student not found."
+                });
+            }
+            return res.status(200).json({
+                success: true,
+                message: "Student retrieved successfully.",
+                students: [students],
+                pagination: {
+                    total: 1,
+                    page: 1,
+                    limit: 1,
+                    totalPages: 1,
+                    hasNextPage: false,
+                    hasPrevPage: false,
+                },
+            });
+        }
+
+        // Parse pagination values with defaults and validation
+        const pageNumber = Math.max(parseInt(page as string) || 1, 1);
+        const limitNumber = Math.max(Math.min(parseInt(limit as string) || 10, 100), 1);
+
+        // Construct search filter
+        const searchTerm = search ? String(search).trim() : "";
+        const searchFilter = searchTerm
+            ? {
+                role: "student",
+                name: { $regex: searchTerm, $options: "i" }
+            }
+            : { role: "student" };
+
+        // Get total count
+        const totalStudents = await User.countDocuments(searchFilter);
+        const totalPages = Math.ceil(totalStudents / limitNumber) || 1;
+        const validPage = Math.min(pageNumber, totalPages);
+        const skip = (validPage - 1) * limitNumber;
+
+        // Query students
+        const students = await User.find(searchFilter)
+            .skip(skip)
+            .limit(limitNumber)
+            .lean();
+
+        return res.status(200).json({
+            success: true,
+            message: "Students retrieved successfully.",
+            students,
+            pagination: {
+                total: totalStudents,
+                page: validPage,
+                limit: limitNumber,
+                totalPages,
+                hasNextPage: validPage < totalPages,
+                hasPrevPage: validPage > 1,
+            },
+        });
+    } catch (error: any) {
+        console.error("Error fetching students:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve students.",
+            error: process.env.NODE_ENV === "production" ? "Internal server error" : error.message,
+        });
+    }
+};
+
+
+const getAllStudentsTotal = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        // Get total count of students with role "student"
+        const totalStudents = await User.countDocuments({ role: "student" });
+
+        return res.status(200).json({
+            success: true,
+            message: "Total students retrieved successfully.",
+            total: totalStudents,
+        });
+    } catch (error: any) {
+        console.error("Error fetching total students:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve total students.",
+            error: process.env.NODE_ENV === "production" ? "Internal server error" : error.message,
+        });
+    }
+};
+
+
+const getTotalDormsAndRooms = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { adminId } = req.params; // <-- FIXED (Use req.params instead of req.body)
+
+        // Validate input
+        if (!adminId) {
+            return res.status(400).json({
+                success: false,
+                message: "Admin ID is required.",
+            });
+        }
+
+        // Fetch all dorms under this adminId
+        const dorms = await Dorm.find({ adminId }).lean();
+
+        // Calculate total dorms for this admin
+        const totalDorms = dorms.length;
+
+        // Calculate total rooms across all dorms
+        const totalRooms = dorms.reduce((acc, dorm) => acc + dorm.rooms.length, 0);
+
+        return res.status(200).json({
+            success: true,
+            message: "Dormitory data retrieved successfully.",
+            totalDorms,
+            totalRooms,
+        });
+    } catch (error: any) {
+        console.error("Error fetching dormitory data:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve dormitory data.",
+            error: process.env.NODE_ENV === "production" ? "Internal server error" : error.message,
+        });
+    }
+};
+
+
+
+// API to create a new dorm entry
+const createDorm = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { adminId, location, name, rooms } = req.body;
+
+        // Validate required fields
+        if (!adminId || !location || !name || !rooms || !Array.isArray(rooms) || rooms.length === 0) {
+            return res.status(400).json({ success: false, message: "Missing required fields or invalid rooms array." });
+        }
+
+        // Generate a unique ID for the dorm
+        const dormId = new mongoose.Types.ObjectId();
+
+        // Create a new dorm document
+        const newDorm = new Dorm({
+            _id: dormId,
+            adminId,
+            location,
+            name,
+            rooms,
+        });
+
+        await newDorm.save();
+
+        return res.status(201).json({
+            success: true,
+            message: "Dorm created successfully.",
+            dorm: newDorm,
+        });
+    } catch (error: any) {
+        console.error("Error creating dorm:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+// API to get all dorms by adminId
+const getDormsByAdminId = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { adminId } = req.params;
+
+        // Validate required parameter
+        if (!adminId) {
+            return res.status(400).json({ success: false, message: "Admin ID is required." });
+        }
+
+        // Fetch dorms by adminId
+        const dorms = await Dorm.find({ adminId }).lean();
+
+        if (!dorms.length) {
+            return res.status(404).json({ success: false, message: "No dorms found for this admin." });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Dorms retrieved successfully.",
+            dorms,
+        });
+    } catch (error: any) {
+        console.error("Error fetching dorms:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+// API to get all dorms by adminId
+const getAllDormsForStudentView = async (req: Request, res: Response): Promise<Response> => {
+    try {
+
+        // Fetch dorms by adminId
+        const dorms = await Dorm.find({ adminId: "67b6122b87e0d9aae35ffdd6" }).lean();
+
+        if (!dorms.length) {
+            return res.status(404).json({ success: false, message: "No dorms found for this admin." });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Dorms retrieved successfully.",
+            dorms,
+        });
+    } catch (error: any) {
+        console.error("Error fetching dorms:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+const updateDorm = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { dormId } = req.params;
+        const updates = req.body;
+
+        // Validate dormId
+        if (!mongoose.Types.ObjectId.isValid(dormId)) {
+            return res.status(400).json({ success: false, message: "Invalid dorm ID." });
+        }
+
+        // Validate that at least one field is provided for update
+        if (Object.keys(updates).length === 0) {
+            return res.status(400).json({ success: false, message: "No update data provided." });
+        }
+
+        // Find and update dorm
+        const updatedDorm = await Dorm.findByIdAndUpdate(dormId, updates, { new: true, runValidators: true }).lean();
+
+        if (!updatedDorm) {
+            return res.status(404).json({ success: false, message: "Dorm not found." });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Dorm updated successfully.",
+            dorm: updatedDorm,
+        });
+    } catch (error: any) {
+        console.error("Error updating dorm:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+const deleteDormById = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { dormId } = req.params;
+
+        // Validate dormId
+        if (!mongoose.Types.ObjectId.isValid(dormId)) {
+            return res.status(400).json({ success: false, message: "Invalid dorm ID." });
+        }
+
+        // Find and delete the dorm
+        const deletedDorm = await Dorm.findByIdAndDelete(dormId).lean();
+
+        if (!deletedDorm) {
+            return res.status(404).json({ success: false, message: "Dorm not found." });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Dorm deleted successfully.",
+            dorm: deletedDorm,
+        });
+    } catch (error: any) {
+        console.error("Error deleting dorm:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+const getDormById = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { dormId } = req.params;
+        console.log("Searching for dorm with ID:", dormId);
+
+        // Validate dormId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(dormId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid dorm ID format."
+            });
+        }
+
+        // Create a proper ObjectId from the string
+        const objectId = new mongoose.Types.ObjectId(dormId);
+
+        // Find dorm by _id using the ObjectId
+        const dorm = await Dorm.findOne({ _id: objectId }).lean();
+
+        if (!dorm) {
+            return res.status(404).json({
+                success: false,
+                message: "Dorm not found with ID: " + dormId
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Dorm retrieved successfully.",
+            dorm,
+        });
+    } catch (error: any) {
+        console.error(`Error fetching dorm with ID ${req.params.dormId}:`, error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+
+
+const getUserById = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params;
+        console.log("Searching for user with ID:", userId);
+
+        // Validate userId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format."
+            });
+        }
+
+        // Create a proper ObjectId from the string
+        const objectId = new mongoose.Types.ObjectId(userId);
+
+        // Find user by _id using the ObjectId
+        const user = await User.findOne({ _id: objectId }).lean();
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found with ID: " + userId
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "User retrieved successfully.",
+            user,
+        });
+    } catch (error: any) {
+        console.error(`Error fetching user with ID ${req.params.userId}:`, error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+const requestRoomApplication = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const {
+            dormId,
+            roomId,
+            adminId,
+            checkInDate,
+            checkOutDate,
+            numberOfGuests,
+            userId,
+            name,
+            email,
+            phone,
+        } = req.body;
+
+        // Validate required fields
+        if (!dormId || !roomId || !adminId || !checkInDate || !checkOutDate || !numberOfGuests || !userId || !name || !email || !phone) {
+            return res.status(400).json({
+                success: false,
+                message: "All fields are required.",
+            });
+        }
+
+        // Store the application in the "applications" collection
+        const application = new Application({
+            dormId,
+            roomId,
+            adminId,
+            userId,
+            name,
+            email,
+            phone,
+            checkInDate,
+            checkOutDate,
+            numberOfGuests,
+            status: "pending", // Default status
+        });
+
+        await application.save();
+
+        return res.status(201).json({
+            success: true,
+            message: "Room application submitted successfully.",
+            application,
+        });
+    } catch (error: any) {
+        console.error("Error processing room application:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+const getAllApplicationsById = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params;
+        const { role } = req.query;
+
+        // Validate userId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format."
+            });
+        }
+
+        let applications;
+
+        // Check if the role is admin
+        if (role === "admin") {
+            // Fetch applications where adminId matches the provided userId
+            applications = await Application.find({ adminId: userId }).lean();
+        } else {
+            // Fetch applications where userId matches the provided userId
+            applications = await Application.find({ userId: userId }).lean();
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Applications retrieved successfully.",
+            applications,
+        });
+    } catch (error: any) {
+        console.error("Error fetching applications:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+const updateApplicationStatus = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { applicationId } = req.params; // Get applicationId from params
+        const { status } = req.body; // Get status from request body
+
+        // Validate applicationId
+        if (!mongoose.Types.ObjectId.isValid(applicationId)) {
+            return res.status(400).json({ success: false, message: "Invalid application ID." });
+        }
+
+        // Validate status
+        if (!status) {
+            return res.status(400).json({ success: false, message: "Status is required." });
+        }
+
+        // Update application status
+        const updatedApplication = await Application.findByIdAndUpdate(applicationId, { status }, { new: true, runValidators: true }).lean();
+
+        if (!updatedApplication) {
+            return res.status(404).json({ success: false, message: "Application not found." });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Application status updated successfully.",
+            application: updatedApplication,
+        });
+    } catch (error: any) {
+        console.error("Error updating application status:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus };
