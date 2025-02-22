@@ -21,7 +21,7 @@ mongoose
 
 app.use(cors({
     origin: '*', // Allow all origins
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Allow all methods
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'], // Allow all methods
     allowedHeaders: ['Content-Type', 'Authorization'], // Allow these headers
 }));
 

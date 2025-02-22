@@ -5,6 +5,7 @@ import jwt from 'jsonwebtoken'
 import mongoose from "mongoose";
 import Dorm from "../models/dorm";
 import { Application } from "../models/applications";
+import NoticePayment from "../models/noticePayment";
 
 // Secret key for JWT (store this in an .env file)
 const JWT_SECRET = process.env.JWT_SECRET || "joseph123";
@@ -643,7 +644,7 @@ const getAllApplicationsById = async (req: Request, res: Response): Promise<Resp
 const updateApplicationStatus = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { applicationId } = req.params; // Get applicationId from params
-        const { status } = req.body; // Get status from request body
+        const { status, adminId, userId, roomId } = req.body; // Get status from request body
 
         // Validate applicationId
         if (!mongoose.Types.ObjectId.isValid(applicationId)) {
@@ -657,6 +658,58 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
 
         // Update application status
         const updatedApplication = await Application.findByIdAndUpdate(applicationId, { status }, { new: true, runValidators: true }).lean();
+
+        if (!updatedApplication) {
+            return res.status(404).json({ success: false, message: "Application not found." });
+        }
+
+        // Update user data with adminId, userId, roomId, and applicationId
+        await User.findByIdAndUpdate(userId, {
+            adminId,
+            roomId,
+            applicationId
+        }, { new: true, runValidators: true });
+
+        return res.status(200).json({
+            success: true,
+            message: "Application status updated successfully.",
+            application: updatedApplication,
+        });
+    } catch (error: any) {
+        console.error("Error updating application status:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+
+// ... existing code ...
+
+const scheduleInterviewApplication = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { applicationId } = req.params; // Get applicationId from params
+        const { date, time } = req.body; // Get date and time from request body
+
+        // Validate applicationId
+        if (!mongoose.Types.ObjectId.isValid(applicationId)) {
+            return res.status(400).json({ success: false, message: "Invalid application ID." });
+        }
+
+        // Validate date and time
+        if (!date || !time) {
+            return res.status(400).json({ success: false, message: "Date and time are required." });
+        }
+
+        // Update application with interview details
+        const updatedApplication = await Application.findByIdAndUpdate(applicationId, {
+            status: "for-interview", // Set status to "for-interview"
+            interviewDate: date, // Assuming you want to store the date
+            interviewTime: time // Assuming you want to store the time
+        }, { new: true, runValidators: true }).lean();
 
         if (!updatedApplication) {
             return res.status(404).json({ success: false, message: "Application not found." });
@@ -677,4 +730,224 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
     }
 };
 
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus };
+
+const getAllPendingApplicationsTotal = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { adminId } = req.params;
+
+        // Validate adminId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(adminId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid admin ID format."
+            });
+        }
+
+        // Fetch applications with "pending" status where adminId matches the provided adminId
+        const applications = await Application.find({ adminId: adminId, status: "pending" }).lean();
+
+        return res.status(200).json({
+            success: true,
+            message: "Pending applications retrieved successfully.",
+            applications,
+        });
+    } catch (error: any) {
+        console.error("Error fetching applications:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+}
+
+
+export const sendNoticePaymentForStudent = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const {
+            userId,
+            amount,
+            dueDate,
+            description,
+            studentId,
+            email,
+            firstName,
+            lastName,
+            phone,
+            role,
+            roomId
+        } = req.body;
+
+        // Validate required fields
+        if (!userId || !amount || !dueDate || !description || !studentId || !roomId) {
+            return res.status(400).json({
+                success: false,
+                message: "All fields are required.",
+            });
+        }
+
+        // Create a new notice payment document
+        const noticePayment = new NoticePayment({
+            userId,
+            studentId,
+            amount,
+            dueDate,
+            description,
+            email,
+            firstName,
+            lastName,
+            phone,
+            role,
+            roomId,
+            status: "pending",
+            createdAt: new Date()
+        });
+
+        await noticePayment.save();
+
+        // Update the user's roomId
+        const user = await User.findByIdAndUpdate(
+            userId,
+            { roomId },
+            { new: true }
+        );
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found.",
+            });
+        }
+
+        return res.status(201).json({
+            success: true,
+            message: "Notice payment sent successfully.",
+            noticePayment,
+            updatedUser: user
+        });
+
+    } catch (error: any) {
+        console.error("Error sending notice payment for student:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+const getMyAllNoticePayments = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params;
+        const { page, limit } = req.query as { page: string, limit: string };
+
+        // Validate userId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format."
+            });
+        }
+
+        // Parse pagination values with defaults
+        const pageNumber = Math.max(parseInt(page) || 1, 1);
+        const limitNumber = Math.max(Math.min(parseInt(limit) || 10, 100), 1);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        // Fetch notice payments for the user with pagination and sorting (latest first)
+        const noticePayments = await NoticePayment.find({ userId })
+            .sort({ createdAt: -1 }) // Sort by createdAt (latest first)
+            .skip(skip)
+            .limit(limitNumber)
+            .lean();
+
+        // Get total count for pagination
+        const totalPayments = await NoticePayment.countDocuments({ userId });
+        const totalPages = Math.ceil(totalPayments / limitNumber);
+
+        return res.status(200).json({
+            success: true,
+            message: "Notice payments retrieved successfully.",
+            noticePayments,
+            pagination: {
+                total: totalPayments,
+                page: pageNumber,
+                limit: limitNumber,
+                totalPages,
+                hasNextPage: pageNumber < totalPages,
+                hasPrevPage: pageNumber > 1,
+            },
+        });
+    } catch (error: any) {
+        console.error("Error fetching notice payments:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+const updateStatusOfNoticePayment = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { noticeId } = req.params;
+        const { status, paidDate } = req.body;
+
+        // Validate noticeId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(noticeId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid notice ID format.",
+            });
+        }
+
+        // Ensure status is valid
+        const validStatuses = ["pending", "paid", "overdue"];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid status. Allowed values: 'pending', 'paid', 'overdue'.",
+            });
+        }
+
+        // Prepare update object
+        const updateData: { status: string; paidDate?: string } = { status };
+        if (status === "paid") {
+            updateData.paidDate = paidDate || new Date().toISOString();
+        } else {
+            updateData.paidDate = undefined; // Remove paidDate if not paid
+        }
+
+        // Find and update notice payment
+        const noticePayment = await NoticePayment.findByIdAndUpdate(
+            noticeId,
+            updateData,
+            { new: true } // Return updated document
+        );
+
+        if (!noticePayment) {
+            return res.status(404).json({
+                success: false,
+                message: "Notice payment not found.",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Payment status updated successfully.",
+            noticePayment,
+        });
+    } catch (error: any) {
+        console.error("Error updating payment status:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment };

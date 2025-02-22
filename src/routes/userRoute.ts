@@ -32,4 +32,14 @@ router.get("/applications/:userId", userController.getAllApplicationsById);
 
 router.patch("/application/:applicationId", userController.updateApplicationStatus);
 
+router.patch("/application/interview/:applicationId", userController.scheduleInterviewApplication);
+
+router.get("/applications/pendings/:adminId", userController.getAllPendingApplicationsTotal);
+
+router.post("/notice-payment", userController.sendNoticePaymentForStudent);
+
+router.get("/notice-payments/:userId", userController.getMyAllNoticePayments);
+
+router.patch("/update-status-payment/:noticeId", userController.updateStatusOfNoticePayment);
+
 export default router;

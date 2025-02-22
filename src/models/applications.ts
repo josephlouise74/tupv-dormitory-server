@@ -10,6 +10,8 @@ interface IApplication extends Document {
     adminId: string;
     checkInDate: Date;
     checkOutDate: Date;
+    interviewDate: Date;
+    interviewTime: string;
     numberOfGuests: number;
     status: "pending" | "approved" | "rejected" | "for-interview";
     createdAt: Date;
@@ -27,6 +29,8 @@ const ApplicationSchema = new Schema<IApplication>({
     checkOutDate: { type: Date, required: true },
     numberOfGuests: { type: Number, required: true },
     status: { type: String, enum: ["pending", "approved", "rejected", "for-interview"], default: "pending" },
+    interviewDate: { type: Date, required: false },
+    interviewTime: { type: String, required: false },
     createdAt: { type: Date, default: Date.now },
 });
 

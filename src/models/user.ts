@@ -35,6 +35,31 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: "student",
     },
+    applicationId: {
+        type: String,
+        default: "",
+    },
+    adminId: {
+        type: String,
+        default: "",
+    },
+    roomId: {
+        type: String,
+        default: "",
+    },
+    status: {
+        type: String,
+        default: "pending",
+    },
+    userId: {
+        type: String,
+        default: "",
+    },
+    dormId: {
+        type: String,
+        default: "",
+    },
+
 }, { timestamps: true });
 
 const User = mongoose.model("users", userSchema);
