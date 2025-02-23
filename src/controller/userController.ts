@@ -1039,7 +1039,7 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
             evictionNoticeDate,
             evictionNoticeTime,
         } = req.body;
-
+        console.log(req.body);
         // Validate required fields
         if (!userId || !studentId || !roomId || !applicationId || !evictionReason || !evictionNoticeDate || !evictionNoticeTime) {
             return res.status(400).json({
