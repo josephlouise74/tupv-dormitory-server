@@ -44,4 +44,12 @@ router.patch("/update-status-payment/:noticeId", userController.updateStatusOfNo
 
 router.delete("/delete-application/:applicationId", userController.deleteApplication);
 
+router.post("/eviction-notice", userController.sendStudentEvictionNotice);
+
+router.delete("/delete-student/:userId", userController.deleteStudentById);
+
+/* router.patch("/undo-eviction/:userId", userController.undoEviction);
+ */
+
+router.patch("/update-application-data/:applicationId", userController.updateApplicationDataWithInterviewScoring);
 export default router;

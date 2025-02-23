@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { application, Request, Response } from "express";
 import bcrypt from "bcrypt";
 import User from "../models/user";
 import jwt from 'jsonwebtoken'
@@ -6,6 +6,7 @@ import mongoose from "mongoose";
 import Dorm from "../models/dorm";
 import { Application } from "../models/applications";
 import NoticePayment from "../models/noticePayment";
+import Eviction from "../models/eviction";
 
 // Secret key for JWT (store this in an .env file)
 const JWT_SECRET = process.env.JWT_SECRET || "joseph123";
@@ -649,7 +650,9 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
     try {
         const { applicationId } = req.params;
         const { status, adminId, userId, roomId, dormId, interview } = req.body;
+
         console.log("Received request body:", req.body);
+
         // Validate applicationId
         if (!mongoose.Types.ObjectId.isValid(applicationId)) {
             return res.status(400).json({ success: false, message: "Invalid application ID." });
@@ -660,13 +663,13 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
             return res.status(400).json({ success: false, message: "Missing required fields." });
         }
 
-        // Set status to "for-interview" if interview is true
-        const finalStatus = interview ? "for-interview" : status; // Determine final status
+        // Determine final status
+        const finalStatus = interview ? "for-interview" : status;
 
         // Update application status
         const updatedApplication = await Application.findByIdAndUpdate(
             applicationId,
-            { status: finalStatus }, // Use finalStatus here
+            { status: finalStatus },
             { new: true, runValidators: true }
         ).lean();
 
@@ -675,7 +678,7 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
         }
 
         // Find the dorm associated with the admin
-        const dorm = await Dorm.findOne({ adminId: adminId });
+        const dorm = await Dorm.findOne({ adminId });
         if (!dorm) {
             return res.status(404).json({ success: false, message: "Dorm not found for this admin." });
         }
@@ -686,10 +689,12 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
             return res.status(404).json({ success: false, message: "Room not found in the dorm." });
         }
 
-        // Reduce maxPax by 1 (ensure it does not go below 0)
-        dorm.rooms[roomIndex].maxPax = Math.max(0, dorm.rooms[roomIndex].maxPax - 1);
+        // Only reduce maxPax if the status is NOT "for-interview"
+        if (finalStatus !== "for-interview") {
+            dorm.rooms[roomIndex].maxPax = Math.max(0, dorm.rooms[roomIndex].maxPax - 1);
+        }
 
-        // Save the updated dorm with the modified room data
+        // Save the updated dorm only if maxPax was modified
         await dorm.save();
 
         // Update the user's information with the adminId, roomId, and applicationId
@@ -701,7 +706,7 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
 
         return res.status(200).json({
             success: true,
-            message: "Application status and room maxPax updated successfully.",
+            message: "Application status updated successfully.",
             application: updatedApplication,
             updatedMaxPax: dorm.rooms[roomIndex].maxPax
         });
@@ -715,7 +720,6 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
         });
     }
 };
-
 
 
 
@@ -1018,4 +1022,275 @@ const deleteApplication = async (req: Request, res: Response): Promise<Response>
         });
     }
 };
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication };
+
+const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const {
+            userId,
+            studentId,
+            email,
+            firstName,
+            lastName,
+            phone,
+            roomId,
+            adminId,
+            applicationId,
+            evictionReason,
+            evictionNoticeDate,
+            evictionNoticeTime,
+        } = req.body;
+
+        // Validate required fields
+        if (!userId || !studentId || !roomId || !applicationId || !evictionReason || !evictionNoticeDate || !evictionNoticeTime) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing required fields.",
+            });
+        }
+
+        // Find the application by applicationId
+        const application = await Application.findById(applicationId);
+        if (!application) {
+            return res.status(404).json({
+                success: false,
+                message: "Application not found.",
+            });
+        }
+
+        // Update the application to set eviction to true
+        application.evicted = true; // Add eviction field
+        application.evictionNoticeDate = evictionNoticeDate; // Add eviction field
+        application.evictionNoticeTime = evictionNoticeTime; // Add eviction field
+        application.evictionReason = evictionReason; // Add eviction field
+        await application.save(); // Save the updated application
+
+        // Find the user by userId
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found.",
+            });
+        }
+
+        // Update the user's eviction details
+        user.evicted = true;
+        user.evictionNoticeDate = evictionNoticeDate;
+        user.evictionNoticeTime = evictionNoticeTime;
+        user.evictionReason = evictionReason;
+        user.userId = userId;
+        await user.save();
+
+        // Create and store a new eviction record
+        const newEviction = new Eviction({
+            userId,
+            studentId,
+            adminId,
+            applicationId,
+            roomId,
+            email,
+            firstName,
+            lastName,
+            phone,
+            evictionReason,
+            evictionNoticeDate,
+            evictionNoticeTime,
+            evicted: true,
+        });
+
+        await newEviction.save();
+
+        return res.status(201).json({
+            success: true,
+            message: "Eviction recorded successfully.",
+            eviction: newEviction,
+        });
+
+    } catch (error: any) {
+        console.error("Error processing eviction:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+/* const undoEviction = async (req: Request, res: Response): Promise<any> => {
+    try {
+        const { userId } = req.params;
+
+        // Find and update the eviction record to set evicted to false
+        const updatedEviction = await Eviction.findOneAndUpdate(
+            { userId },
+            { evicted: false },
+            { new: true }
+        );
+
+        // Find and update the user record to set evicted to false
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { evicted: false },
+            { new: true }
+        );
+
+        if (!updatedEviction || !updatedUser) {
+            return res.status(404).json({
+                success: false,
+                message: "Eviction record or user not found.",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Eviction status updated to false successfully.",
+            eviction: updatedEviction,
+            user: updatedUser,
+        });
+
+    } catch (error: any) {
+        console.error("Error updating eviction status:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+}; */
+
+
+
+
+const deleteStudentById = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params; // Use userId from request parameters
+
+        // Validate userId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ success: false, message: "Invalid user ID." });
+        }
+
+        // Find the user
+        const user = await User.findById(userId).lean();
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found." });
+        }
+
+        // Delete user from 'users' collection
+        await User.findByIdAndDelete(userId);
+
+        // Delete all eviction records for the user
+        await Eviction.deleteMany({ userId: userId });
+
+        // Delete all applications associated with the user
+        await Application.deleteMany({ userId: userId });
+
+        return res.status(200).json({
+            success: true,
+            message: "User and associated records deleted successfully.",
+        });
+    } catch (error: any) {
+        console.error("Error deleting user and associated data:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+const updateApplicationDataWithInterviewScoring = async (
+    req: Request,
+    res: Response
+): Promise<Response> => {
+    try {
+        const { applicationId } = req.params;
+        const { userId, ...updateFields } = req.body; // Extract userId and interview data
+
+        // Validate applicationId
+        if (!mongoose.Types.ObjectId.isValid(applicationId)) {
+            return res.status(400).json({ success: false, message: "Invalid application ID." });
+        }
+
+        // Validate userId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({ success: false, message: "Invalid user ID." });
+        }
+
+        // Find the user in "users" collection
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ success: false, message: "User not found." });
+        }
+
+        // Find the existing application data
+        const existingApplication = await Application.findById(applicationId);
+        if (!existingApplication) {
+            return res.status(404).json({ success: false, message: "Application not found." });
+        }
+
+        // Required fields to be updated
+        const requiredFields = [
+            "distanceKm",
+            "distanceScore",
+            "familyIncomeScore",
+            "interviewNotes",
+            "interviewScore",
+            "monthlyIncome",
+            "recommendation",
+            "totalScore",
+        ];
+
+        // Ensure all required fields are present
+        if (requiredFields.some((field) => updateFields[field] === undefined)) {
+            return res.status(400).json({ success: false, message: "All fields are required." });
+        }
+
+        // Merge existing application data with new interview scoring data
+        const updatedApplicationData = {
+            ...existingApplication.toObject(), // Convert Mongoose document to plain object
+            ...updateFields,
+            assessment: "completed", // Set default value for assessment
+        };
+
+        // Merge interview scoring data directly into the user object
+        const updatedUserData = {
+            ...user.toObject(), // Convert Mongoose document to plain object
+            ...updateFields, // Spread interview scoring fields directly into user data
+        };
+
+        // Update Application in DB
+        const updatedApplication = await Application.findByIdAndUpdate(
+            applicationId,
+            { $set: updatedApplicationData },
+            { new: true }
+        );
+
+        // Update User in DB
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $set: updatedUserData },
+            { new: true }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Application and User data updated successfully.",
+            applicationData: updatedApplication,
+            userData: updatedUser,
+        });
+    } catch (error: any) {
+        console.error("Error updating application and user data:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV !== "production" ? error.message : undefined,
+        });
+    }
+};
+
+
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring };

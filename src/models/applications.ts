@@ -16,6 +16,22 @@ interface IApplication extends Document {
     createdAt: Date;
     description?: string;
     maxPax?: number;
+    evictionNoticeDate?: Date;
+    evictionNoticeTime?: string;
+    evicted?: boolean;
+    evictionReason?: string;
+    evictionNoticeSent?: boolean;
+    evictionNoticeSentDate?: Date;
+    assessment?: string;
+    interviewNotes?: string;
+    interviewScore?: number;
+    distanceKm?: number;
+    distanceScore?: number;
+    familyIncomeScore?: number;
+    monthlyIncome?: number;
+    recommendation?: string;
+    totalScore?: number;
+
 }
 
 const ApplicationSchema = new Schema<IApplication>({
@@ -34,6 +50,20 @@ const ApplicationSchema = new Schema<IApplication>({
     interviewDate: { type: Date, required: false },
     interviewTime: { type: String, required: false },
     createdAt: { type: Date, default: Date.now },
+    evictionNoticeDate: { type: Date, required: false },
+    evictionNoticeTime: { type: String, required: false },
+    evicted: { type: Boolean, required: false },
+    evictionReason: { type: String, required: false },
+    assessment: { type: String, required: false },
+    interviewNotes: { type: String, required: false },
+    interviewScore: { type: Number, required: false },
+    distanceKm: { type: Number, required: false },
+    distanceScore: { type: Number, required: false },
+    familyIncomeScore: { type: Number, required: false },
+    monthlyIncome: { type: Number, required: false },
+    recommendation: { type: String, required: false },
+    totalScore: { type: Number, required: false },
+
 });
 
 export const Application = mongoose.model<IApplication>("Application", ApplicationSchema);

@@ -59,6 +59,58 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: "",
     },
+    evicted: {
+        type: Boolean,
+        default: false,
+    },
+    evictionNoticeDate: {
+        type: Date,
+        default: "",
+    },
+    evictionNoticeTime: {
+        type: String,
+        default: "",
+    },
+    evictionReason: {
+        type: String,
+        default: "",
+    },
+    assessment: {
+        type: String,
+        default: "",
+    },
+    interviewNotes: {
+        type: String,
+        default: "",
+    },
+    interviewScore: {
+        type: Number,
+        default: 0,
+    },
+    distanceKm: {
+        type: Number,
+        default: 0,
+    },
+    distanceScore: {
+        type: Number,
+        default: 0,
+    },
+    familyIncomeScore: {
+        type: Number,
+        default: 0,
+    },
+    monthlyIncome: {
+        type: Number,
+        default: 0,
+    },
+    recommendation: {
+        type: String,
+        default: "",
+    },
+    totalScore: {
+        type: Number,
+        default: 0,
+    },
 
 }, { timestamps: true });
 
