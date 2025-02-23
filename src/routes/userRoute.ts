@@ -42,4 +42,6 @@ router.get("/notice-payments/:userId", userController.getMyAllNoticePayments);
 
 router.patch("/update-status-payment/:noticeId", userController.updateStatusOfNoticePayment);
 
+router.delete("/delete-application/:applicationId", userController.deleteApplication);
+
 export default router;

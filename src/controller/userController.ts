@@ -554,15 +554,16 @@ const requestRoomApplication = async (req: Request, res: Response): Promise<Resp
             adminId,
             checkInDate,
             checkOutDate,
-            numberOfGuests,
             userId,
             name,
             email,
             phone,
+            description,
+            maxPax,
         } = req.body;
 
         // Validate required fields
-        if (!dormId || !roomId || !adminId || !checkInDate || !checkOutDate || !numberOfGuests || !userId || !name || !email || !phone) {
+        if (!dormId || !roomId || !adminId || !checkInDate || !checkOutDate || !userId || !name || !email || !phone || !description || !maxPax) {
             return res.status(400).json({
                 success: false,
                 message: "All fields are required.",
@@ -573,15 +574,16 @@ const requestRoomApplication = async (req: Request, res: Response): Promise<Resp
         const application = new Application({
             dormId,
             roomId,
-            adminId,
+            adminId: "67b6122b87e0d9aae35ffdd6",
             userId,
             name,
             email,
             phone,
             checkInDate,
             checkOutDate,
-            numberOfGuests,
             status: "pending", // Default status
+            description,
+            maxPax,
         });
 
         await application.save();
@@ -620,7 +622,7 @@ const getAllApplicationsById = async (req: Request, res: Response): Promise<Resp
         // Check if the role is admin
         if (role === "admin") {
             // Fetch applications where adminId matches the provided userId
-            applications = await Application.find({ adminId: userId }).lean();
+            applications = await Application.find({ adminId: "67b6122b87e0d9aae35ffdd6" }).lean();
         } else {
             // Fetch applications where userId matches the provided userId
             applications = await Application.find({ userId: userId }).lean();
@@ -641,29 +643,56 @@ const getAllApplicationsById = async (req: Request, res: Response): Promise<Resp
     }
 };
 
+
+
 const updateApplicationStatus = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { applicationId } = req.params; // Get applicationId from params
-        const { status, adminId, userId, roomId } = req.body; // Get status from request body
-
+        const { applicationId } = req.params;
+        const { status, adminId, userId, roomId, dormId, interview } = req.body;
+        console.log("Received request body:", req.body);
         // Validate applicationId
         if (!mongoose.Types.ObjectId.isValid(applicationId)) {
             return res.status(400).json({ success: false, message: "Invalid application ID." });
         }
 
-        // Validate status
-        if (!status) {
-            return res.status(400).json({ success: false, message: "Status is required." });
+        // Validate required fields
+        if (!adminId || !userId || !roomId || !dormId) {
+            return res.status(400).json({ success: false, message: "Missing required fields." });
         }
 
+        // Set status to "for-interview" if interview is true
+        const finalStatus = interview ? "for-interview" : status; // Determine final status
+
         // Update application status
-        const updatedApplication = await Application.findByIdAndUpdate(applicationId, { status }, { new: true, runValidators: true }).lean();
+        const updatedApplication = await Application.findByIdAndUpdate(
+            applicationId,
+            { status: finalStatus }, // Use finalStatus here
+            { new: true, runValidators: true }
+        ).lean();
 
         if (!updatedApplication) {
             return res.status(404).json({ success: false, message: "Application not found." });
         }
 
-        // Update user data with adminId, userId, roomId, and applicationId
+        // Find the dorm associated with the admin
+        const dorm = await Dorm.findOne({ adminId: adminId });
+        if (!dorm) {
+            return res.status(404).json({ success: false, message: "Dorm not found for this admin." });
+        }
+
+        // Find the specific room inside the dorm's rooms array
+        const roomIndex = dorm.rooms.findIndex(room => room._id.toString() === dormId);
+        if (roomIndex === -1) {
+            return res.status(404).json({ success: false, message: "Room not found in the dorm." });
+        }
+
+        // Reduce maxPax by 1 (ensure it does not go below 0)
+        dorm.rooms[roomIndex].maxPax = Math.max(0, dorm.rooms[roomIndex].maxPax - 1);
+
+        // Save the updated dorm with the modified room data
+        await dorm.save();
+
+        // Update the user's information with the adminId, roomId, and applicationId
         await User.findByIdAndUpdate(userId, {
             adminId,
             roomId,
@@ -672,9 +701,11 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
 
         return res.status(200).json({
             success: true,
-            message: "Application status updated successfully.",
+            message: "Application status and room maxPax updated successfully.",
             application: updatedApplication,
+            updatedMaxPax: dorm.rooms[roomIndex].maxPax
         });
+
     } catch (error: any) {
         console.error("Error updating application status:", error);
         return res.status(500).json({
@@ -687,13 +718,15 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
 
 
 
+
 // ... existing code ...
 
 const scheduleInterviewApplication = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { applicationId } = req.params; // Get applicationId from params
         const { date, time } = req.body; // Get date and time from request body
-
+        console.log("Received request body:", time);
+        console.log("Received applicationId:", applicationId);
         // Validate applicationId
         if (!mongoose.Types.ObjectId.isValid(applicationId)) {
             return res.status(400).json({ success: false, message: "Invalid application ID." });
@@ -949,5 +982,40 @@ const updateStatusOfNoticePayment = async (req: Request, res: Response): Promise
     }
 };
 
+const deleteApplication = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { applicationId } = req.params; // Use applicationId from params
+        // Validate applicationId
+        if (!mongoose.Types.ObjectId.isValid(applicationId)) {
+            return res.status(400).json({ success: false, message: "Invalid application ID." });
+        }
 
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment };
+        // Find the application
+        const application = await Application.findById(applicationId).lean();
+
+        if (!application) {
+            return res.status(404).json({ success: false, message: "Application not found." });
+        }
+
+        // Check the status of the application
+        if (application.status !== "pending") {
+            return res.status(400).json({ success: false, message: "Cannot delete application. Only pending applications can be deleted." });
+        }
+
+        // Delete the application
+        await Application.findByIdAndDelete(applicationId);
+
+        return res.status(200).json({
+            success: true,
+            message: "Application deleted successfully.",
+        });
+    } catch (error: any) {
+        console.error("Error deleting application:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication };

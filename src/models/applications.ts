@@ -12,22 +12,24 @@ interface IApplication extends Document {
     checkOutDate: Date;
     interviewDate: Date;
     interviewTime: string;
-    numberOfGuests: number;
     status: "pending" | "approved" | "rejected" | "for-interview";
     createdAt: Date;
+    description?: string;
+    maxPax?: number;
 }
 
 const ApplicationSchema = new Schema<IApplication>({
     dormId: { type: String, required: true },
-    adminId: { type: String, required: false },
+    adminId: { type: String, required: false, default: "67b6122b87e0d9aae35ffdd6" },
     roomId: { type: String, required: true },
     userId: { type: String, required: true },
     name: { type: String, required: true },
     email: { type: String, required: true },
     phone: { type: String, required: true },
+    description: { type: String, required: false },
+    maxPax: { type: Number, required: false },
     checkInDate: { type: Date, required: true },
     checkOutDate: { type: Date, required: true },
-    numberOfGuests: { type: Number, required: true },
     status: { type: String, enum: ["pending", "approved", "rejected", "for-interview"], default: "pending" },
     interviewDate: { type: Date, required: false },
     interviewTime: { type: String, required: false },
