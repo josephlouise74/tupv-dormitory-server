@@ -41,6 +41,5 @@ app.get("/health", (_req, res) => res.send({ message: "Health OK!" }));
 app.use("/api/v1/user", userRoute);
 
 app.listen(port, () => {
-    ``
     console.log(`Server is running on port ${port}`);
 });

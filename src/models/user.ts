@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
@@ -41,7 +40,7 @@ const userSchema = new mongoose.Schema({
     },
     adminId: {
         type: String,
-        default: "",
+        default: "67b6122b87e0d9aae35ffdd6",
     },
     roomId: {
         type: String,
@@ -110,6 +109,10 @@ const userSchema = new mongoose.Schema({
     totalScore: {
         type: Number,
         default: 0,
+    },
+    selectedRoom: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {},
     },
 
 }, { timestamps: true });

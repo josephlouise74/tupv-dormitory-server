@@ -8,10 +8,11 @@ interface IApplication extends Document {
     email: string;
     phone: string;
     adminId: string;
-    checkInDate: Date;
-    checkOutDate: Date;
-    interviewDate: Date;
-    interviewTime: string;
+    applicationFormUrl: string;
+    distance: number;
+    roomName: string;
+    interviewDate?: Date;
+    interviewTime?: string;
     status: "pending" | "approved" | "rejected" | "for-interview";
     createdAt: Date;
     description?: string;
@@ -31,39 +32,47 @@ interface IApplication extends Document {
     monthlyIncome?: number;
     recommendation?: string;
     totalScore?: number;
-
+    incomeScore?: number;
+    selectedRoom?: object;
 }
 
 const ApplicationSchema = new Schema<IApplication>({
     dormId: { type: String, required: true },
-    adminId: { type: String, required: false, default: "67b6122b87e0d9aae35ffdd6" },
+    adminId: { type: String, default: "67b6122b87e0d9aae35ffdd6" },
     roomId: { type: String, required: true },
     userId: { type: String, required: true },
     name: { type: String, required: true },
     email: { type: String, required: true },
     phone: { type: String, required: true },
-    description: { type: String, required: false },
-    maxPax: { type: Number, required: false },
-    checkInDate: { type: Date, required: true },
-    checkOutDate: { type: Date, required: true },
+    description: { type: String },
+    maxPax: { type: Number },
+    roomName: { type: String },
+    applicationFormUrl: { type: String, required: false },
+    distance: { type: Number, required: false },
     status: { type: String, enum: ["pending", "approved", "rejected", "for-interview"], default: "pending" },
-    interviewDate: { type: Date, required: false },
-    interviewTime: { type: String, required: false },
+    interviewDate: { type: Date },
+    interviewTime: { type: String },
     createdAt: { type: Date, default: Date.now },
-    evictionNoticeDate: { type: Date, required: false },
-    evictionNoticeTime: { type: String, required: false },
-    evicted: { type: Boolean, required: false },
-    evictionReason: { type: String, required: false },
-    assessment: { type: String, required: false },
-    interviewNotes: { type: String, required: false },
-    interviewScore: { type: Number, required: false },
-    distanceKm: { type: Number, required: false },
-    distanceScore: { type: Number, required: false },
-    familyIncomeScore: { type: Number, required: false },
-    monthlyIncome: { type: Number, required: false },
-    recommendation: { type: String, required: false },
-    totalScore: { type: Number, required: false },
-
+    evictionNoticeDate: { type: Date },
+    evictionNoticeTime: { type: String },
+    evicted: { type: Boolean },
+    evictionReason: { type: String },
+    evictionNoticeSent: { type: Boolean },
+    evictionNoticeSentDate: { type: Date },
+    assessment: { type: String },
+    interviewNotes: { type: String },
+    interviewScore: { type: Number },
+    distanceKm: { type: Number },
+    distanceScore: { type: Number },
+    familyIncomeScore: { type: Number },
+    monthlyIncome: { type: String },
+    recommendation: { type: String },
+    totalScore: { type: Number },
+    incomeScore: { type: Number },
+    selectedRoom: {
+        type: mongoose.Schema.Types.Mixed,
+        default: {},
+    },
 });
 
 export const Application = mongoose.model<IApplication>("Application", ApplicationSchema);

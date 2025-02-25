@@ -8,6 +8,8 @@ router.post("/signin", userController.signInUser);
 
 router.get("/students", userController.getAllStudents);
 
+router.post("/applicationform", userController.submitApplicationFormStudent);
+
 router.post("/dorm", userController.createDorm);
 
 router.get("/dorms/:adminId", userController.getDormsByAdminId);

@@ -550,21 +550,23 @@ const getUserById = async (req: Request, res: Response): Promise<Response> => {
 const requestRoomApplication = async (req: Request, res: Response): Promise<Response> => {
     try {
         const {
-            dormId,
-            roomId,
             adminId,
-            checkInDate,
-            checkOutDate,
-            userId,
-            name,
-            email,
-            phone,
+            applicationFormUrl,
             description,
+            distance,
+            dormId,
+            email,
             maxPax,
+            monthlyIncome,
+            name,
+            phone,
+            roomId,
+            roomName,
+            userId,
         } = req.body;
 
         // Validate required fields
-        if (!dormId || !roomId || !adminId || !checkInDate || !checkOutDate || !userId || !name || !email || !phone || !description || !maxPax) {
+        if (!adminId || !applicationFormUrl || !description || !distance || !dormId || !email || !maxPax || !monthlyIncome || !name || !phone || !roomId || !roomName || !userId) {
             return res.status(400).json({
                 success: false,
                 message: "All fields are required.",
@@ -573,18 +575,20 @@ const requestRoomApplication = async (req: Request, res: Response): Promise<Resp
 
         // Store the application in the "applications" collection
         const application = new Application({
-            dormId,
-            roomId,
-            adminId: "67b6122b87e0d9aae35ffdd6",
-            userId,
-            name,
-            email,
-            phone,
-            checkInDate,
-            checkOutDate,
-            status: "pending", // Default status
+            adminId,
+            applicationFormUrl,
             description,
+            distance,
+            dormId,
+            email,
             maxPax,
+            monthlyIncome,
+            name,
+            phone,
+            roomId,
+            roomName,
+            status: "pending", // Default status
+            userId,
         });
 
         await application.save();
@@ -603,6 +607,8 @@ const requestRoomApplication = async (req: Request, res: Response): Promise<Resp
         });
     }
 };
+
+
 
 
 const getAllApplicationsById = async (req: Request, res: Response): Promise<Response> => {
@@ -649,7 +655,7 @@ const getAllApplicationsById = async (req: Request, res: Response): Promise<Resp
 const updateApplicationStatus = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { applicationId } = req.params;
-        const { status, adminId, userId, roomId, dormId, interview } = req.body;
+        const { status, adminId, userId, roomId, dormId, interview, selectedRoom } = req.body;
 
         console.log("Received request body:", req.body);
 
@@ -666,10 +672,15 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
         // Determine final status
         const finalStatus = interview ? "for-interview" : status;
 
-        // Update application status
+        // Update application status and selectedRoom
         const updatedApplication = await Application.findByIdAndUpdate(
             applicationId,
-            { status: finalStatus },
+            {
+                $set: {
+                    status: finalStatus,
+                    selectedRoom: selectedRoom || undefined // Update selectedRoom if provided
+                }
+            },
             { new: true, runValidators: true }
         ).lean();
 
@@ -684,24 +695,27 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
         }
 
         // Find the specific room inside the dorm's rooms array
-        const roomIndex = dorm.rooms.findIndex(room => room._id.toString() === dormId);
+        const roomIndex = dorm.rooms.findIndex(room => room.roomName.toString() === roomId);
         if (roomIndex === -1) {
             return res.status(404).json({ success: false, message: "Room not found in the dorm." });
         }
 
-        // Only reduce maxPax if the status is NOT "for-interview"
-        if (finalStatus !== "for-interview") {
+        // Only reduce maxPax if the status is NOT "for-interview" or "pending"
+        if (finalStatus !== "for-interview" && finalStatus !== "pending") {
             dorm.rooms[roomIndex].maxPax = Math.max(0, dorm.rooms[roomIndex].maxPax - 1);
         }
 
         // Save the updated dorm only if maxPax was modified
         await dorm.save();
 
-        // Update the user's information with the adminId, roomId, and applicationId
+        // Update the user's information with the adminId, roomId, applicationId, and selectedRoom
         await User.findByIdAndUpdate(userId, {
-            adminId,
-            roomId,
-            applicationId
+            $set: {
+                adminId,
+                roomId,
+                applicationId,
+                selectedRoom: selectedRoom || undefined // Update selectedRoom if provided
+            }
         }, { new: true, runValidators: true });
 
         return res.status(200).json({
@@ -1236,7 +1250,7 @@ const updateApplicationDataWithInterviewScoring = async (
         const requiredFields = [
             "distanceKm",
             "distanceScore",
-            "familyIncomeScore",
+            "incomeScore",
             "interviewNotes",
             "interviewScore",
             "monthlyIncome",
@@ -1255,7 +1269,7 @@ const updateApplicationDataWithInterviewScoring = async (
             ...updateFields,
             assessment: "completed", // Set default value for assessment
         };
-
+        console.log('updatedApplicationData', updatedApplicationData)
         // Merge interview scoring data directly into the user object
         const updatedUserData = {
             ...user.toObject(), // Convert Mongoose document to plain object
@@ -1293,4 +1307,53 @@ const updateApplicationDataWithInterviewScoring = async (
 };
 
 
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring };
+const submitApplicationFormStudent = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const data: any = req.body;
+        console.log("data", data);
+
+        // Validate required fields
+        if (!data.userId || !data.dormId || !data.roomId || !data.applicationFormUrl) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing required fields. Please provide userId, dormId, roomId, and applicationFormUrl."
+            });
+        }
+
+        // Check if an application already exists for the user
+        const existingApplication = await Application.findOne({ userId: data.userId });
+        if (existingApplication) {
+            return res.status(400).json({
+                success: false,
+                message: "An application already exists for this user."
+            });
+        }
+
+        // Create new application instance
+        const newApplication = new Application({
+            ...data,
+            createdAt: new Date(), // Assuming you want to track creation time
+            status: "pending" // Default status for new applications
+        });
+
+        // Save to database
+        await newApplication.save();
+
+        return res.status(201).json({
+            success: true,
+            message: "Application submitted successfully.",
+            application: newApplication
+        });
+    } catch (error: any) {
+        console.error("Error in submitApplicationFormStudent:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV !== "production" ? error.message : undefined,
+        });
+    }
+};
+
+
+
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent };
