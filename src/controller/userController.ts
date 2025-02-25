@@ -7,6 +7,7 @@ import Dorm from "../models/dorm";
 import { Application } from "../models/applications";
 import NoticePayment from "../models/noticePayment";
 import Eviction from "../models/eviction";
+import nodemailer from "nodemailer";
 
 // Secret key for JWT (store this in an .env file)
 const JWT_SECRET = process.env.JWT_SECRET || "joseph123";
@@ -30,7 +31,7 @@ const createUser = async (req: Request, res: Response): Promise<any> => {
         if (!firstName || !lastName || !email || !password || !confirmPassword || !phone) {
             return res.status(400).json({
                 success: false,
-                message: "All required fields must be filled.",
+                message: "Please fill in all required fields.",
             });
         }
 
@@ -82,7 +83,7 @@ const createUser = async (req: Request, res: Response): Promise<any> => {
         console.error("Error creating user:", error);
         return res.status(500).json({
             success: false,
-            message: "Internal server error.",
+            message: "An error occurred while creating the user.",
             error: error.message,
         });
     }
@@ -111,7 +112,7 @@ const signInUser = async (req: Request, res: Response): Promise<any> => {
         if (!user) {
             return res.status(400).json({
                 success: false,
-                message: "Invalid email or password.",
+                message: `User with email ${normalizedEmail} not found.`,
             });
         }
 
@@ -714,6 +715,7 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
                 adminId,
                 roomId,
                 applicationId,
+                status,
                 selectedRoom: selectedRoom || undefined // Update selectedRoom if provided
             }
         }, { new: true, runValidators: true });
@@ -1131,6 +1133,8 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
 };
 
 
+
+
 /* const undoEviction = async (req: Request, res: Response): Promise<any> => {
     try {
         const { userId } = req.params;
@@ -1355,5 +1359,322 @@ const submitApplicationFormStudent = async (req: Request, res: Response): Promis
 };
 
 
+const updateDormsAndRoomsDetails = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { adminId } = req.params;
+        const { rooms } = req.body;
 
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent };
+        // Validate required fields
+        if (!adminId || !rooms || !Array.isArray(rooms)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid input: adminId and rooms array are required"
+            });
+        }
+
+        // Validate adminId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(adminId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid adminId format"
+            });
+        }
+
+        // Find and update the dorm with the new rooms data
+        const updatedDorm = await Dorm.findOneAndUpdate(
+            { adminId: adminId },
+            { $set: { rooms } },
+            { new: true }
+        );
+
+        if (!updatedDorm) {
+            return res.status(404).json({
+                success: false,
+                message: "Dorm not found for the given adminId"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Dorm rooms updated successfully",
+            dorm: updatedDorm
+        });
+
+    } catch (error: any) {
+        console.error("Error updating dorm rooms:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error",
+            error: process.env.NODE_ENV !== "production" ? error.message : undefined
+        });
+    }
+};
+
+// Utility function for generating 6-digit OTP
+const generateOTP = (): string => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+// Configure nodemailer transporter
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'josephlouisedeleon22@gmail.com', // Replace with your email
+        pass: 'ahua lqqx zydm zgam'
+    }
+});
+
+// Email sending utility function with proper error handling
+const sendOTPEmail = async (email: string, otp: string): Promise<void> => {
+    const mailOptions = {
+        from: 'your-email@gmail.com', // Replace with your email
+        to: email,
+        subject: 'Password Reset OTP',
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2>Password Reset Request</h2>
+                <p>You have requested to reset your password. Please use the following OTP to proceed:</p>
+                <h1 style="color: #4CAF50; font-size: 32px; letter-spacing: 2px;">${otp}</h1>
+                <p>This OTP will expire in 10 minutes.</p>
+                <p>If you didn't request this password reset, please ignore this email.</p>
+                <p>Best regards,<br>Your Application Team</p>
+            </div>
+        `
+    };
+
+    try {
+        await transporter.sendMail(mailOptions);
+    } catch (error) {
+        console.error('Error sending email:', error);
+        throw new Error('Failed to send OTP email');
+    }
+};
+
+const initiatePasswordReset = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { email } = req.params;
+
+        console.log("email", email)
+        // Input validation
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: "Email address is required"
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+        console.log("normalizedEmail", normalizedEmail)
+        // Find user by email (case-insensitive)
+        const user = await User.findOne({
+            email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }
+        });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "No account found with this email address"
+            });
+        }
+
+        // Generate 6-digit OTP
+        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+        // Update user with OTP details
+        await User.findByIdAndUpdate(
+            user._id,
+            {
+                resetPasswordOTP: otp,
+                resetPasswordOTPExpiry: otpExpiry
+            },
+            { new: true }
+        );
+
+        // Send OTP email
+        const mailOptions = {
+            from: 'josephlouisedeleon22@gmail.com',
+            to: normalizedEmail,
+            subject: 'Password Reset Code',
+            html: `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                    <h2>Password Reset Code</h2>
+                    <p>Your verification code is:</p>
+                    <h1 style="color: #8b2131; font-size: 32px; letter-spacing: 2px;">${otp}</h1>
+                    <p>This code will expire in 10 minutes.</p>
+                    <p>If you didn't request this code, please ignore this email.</p>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        return res.status(200).json({
+            success: true,
+            message: "Verification code sent successfully"
+        });
+
+    } catch (error: any) {
+        console.error("Password reset initiation error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to send verification code"
+        });
+    }
+};
+
+const verifyOTP = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { email } = req.params;
+        const { otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: "Email and verification code are required"
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Find user and verify OTP
+        const user = await User.findOne({
+            email: normalizedEmail,
+            resetPasswordOTP: otp,
+            resetPasswordOTPExpiry: { $gt: new Date() }
+        });
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid or expired verification code"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Verification code confirmed",
+            userId: user._id
+        });
+
+    } catch (error: any) {
+        console.error("OTP verification error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to verify code"
+        });
+    }
+};
+
+const setNewPassword = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { email } = req.params;
+        const { password } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Email and new password are required"
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+
+        // Hash new password
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // Update user's password and clear reset fields
+        const updatedUser = await User.findOneAndUpdate(
+            { email: normalizedEmail },
+            {
+                $set: { password: hashedPassword },
+                $unset: { resetPasswordOTP: "", resetPasswordOTPExpiry: "" }
+            },
+            { new: true }
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Password reset successful"
+        });
+
+    } catch (error: any) {
+        console.error("Password reset error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to reset password"
+        });
+    }
+};
+
+
+
+
+const updateDetailsByUserId = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params;
+        const data = req.body;
+
+        // Validate userId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format"
+            });
+        }
+
+        // Prepare update data object
+        const updateData = {
+            email: data.email,
+            phone: data.phone,
+            studentId: data.studentId,
+            schoolName: data.schoolName,
+            schoolAddress: data.schoolAddress,
+            middleName: data.middleName,
+            address: data.address,
+            firstName: data.firstName,
+            lastName: data.lastName,
+            avatarUrl: data.preview // Note: assuming 'preview' comes as part of the data
+        };
+
+        // Find and update user
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { $set: updateData },
+            {
+                new: true, // Return updated document
+                runValidators: true // Run model validators
+            }
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "User details updated successfully",
+            user: updatedUser
+        });
+
+    } catch (error: any) {
+        console.error("Error updating details by userId:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to update user details",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message
+        });
+    }
+};
+
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId };

@@ -53,5 +53,15 @@ router.delete("/delete-student/:userId", userController.deleteStudentById);
 /* router.patch("/undo-eviction/:userId", userController.undoEviction);
  */
 
+router.post("/forgot-password/:email", userController.initiatePasswordReset);
+
+router.post("/verify-otp/:email", userController.verifyOTP);
+
+router.post("/set-new-password/:email", userController.setNewPassword);
+
 router.patch("/update-application-data/:applicationId", userController.updateApplicationDataWithInterviewScoring);
+
+router.patch("/update-dorms-and-rooms/:adminId", userController.updateDormsAndRoomsDetails);
+
+router.patch("/update-my-user-details/:userId", userController.updateDetailsByUserId);
 export default router;
