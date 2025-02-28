@@ -146,6 +146,8 @@ const signInUser = async (req: Request, res: Response): Promise<any> => {
                 phone: user.phone,
                 studentId: user.studentId,
                 role: user.role,
+                status: user.status,
+                avatarUrl: user.avatarUrl,
             },
         });
     } catch (error: any) {
@@ -1641,7 +1643,7 @@ const updateDetailsByUserId = async (req: Request, res: Response): Promise<Respo
             address: data.address,
             firstName: data.firstName,
             lastName: data.lastName,
-            avatarUrl: data.preview // Note: assuming 'preview' comes as part of the data
+            avatarUrl: data.avatarUrl // Note: assuming 'preview' comes as part of the data
         };
 
         // Find and update user

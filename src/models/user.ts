@@ -122,6 +122,10 @@ const userSchema = new mongoose.Schema({
         type: Date,
         default: "",
     },
+    avatarUrl: {
+        type: String,
+        default: "",
+    },
 
 }, { timestamps: true });
 

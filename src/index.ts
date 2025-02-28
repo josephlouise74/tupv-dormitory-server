@@ -5,6 +5,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import userRoute from './routes/userRoute';
+import { SeleniumHelper } from './seleniumHelper';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -39,6 +40,13 @@ app.get("/health", (_req, res) => res.send({ message: "Health OK!" }));
 
 
 app.use("/api/v1/user", userRoute);
+
+app.get("/login", async (req, res) => {
+    const seleniumHelper = new SeleniumHelper();
+    await seleniumHelper.login();
+    await seleniumHelper.quit();
+    res.send("Login automation completed");
+});
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
