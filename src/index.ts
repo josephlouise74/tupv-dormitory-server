@@ -13,7 +13,7 @@ dotenv.config();
 const app = express();
 const port = process.env.PORT || 8000;
 
-const key = process.env.MONGO_URI as string
+const key = process.env.MONGO_URI || "mongodb+srv://josephdatdev:joseph123@josephapi.igxbsyu.mongodb.net/?retryWrites=true&w=majority&appName=JosephAPI";
 
 mongoose
     .connect(key as string)
