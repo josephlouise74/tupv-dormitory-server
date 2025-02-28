@@ -148,6 +148,10 @@ const signInUser = async (req: Request, res: Response): Promise<any> => {
                 role: user.role,
                 status: user.status,
                 avatarUrl: user.avatarUrl,
+                evicted: user.evicted,
+                evictionNoticeDate: user.evictionNoticeDate,
+                evictionNoticeTime: user.evictionNoticeTime,
+                evictionReason: user.evictionReason,
             },
         });
     } catch (error: any) {
@@ -164,21 +168,43 @@ const signInUser = async (req: Request, res: Response): Promise<any> => {
 
 const getAllStudents = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { page, limit, search, studentId } = req.query as { page: string, limit: string, search: string, studentId: string };
+        const { page, limit, search, studentName } = req.query as {
+            page?: string;
+            limit?: string;
+            search?: string;
+            studentName?: string;
+        };
 
-        // If studentId is provided, fetch only that student
-        if (studentId) {
-            const students = await User.findOne({ studentId: studentId }).lean();
-            if (!students) {
+        // If studentName is provided, try searching by firstName and lastName
+        if (studentName) {
+            const nameParts = studentName.trim().split(/\s+/); // Split by spaces
+            let searchFilter: any = { role: "student" };
+
+            if (nameParts.length === 2) {
+                // If two words are provided, assume firstName + lastName
+                searchFilter.firstName = nameParts[0];
+                searchFilter.lastName = nameParts[1];
+            } else {
+                // If only one name is provided, check both firstName and lastName
+                searchFilter.$or = [
+                    { firstName: studentName },
+                    { lastName: studentName }
+                ];
+            }
+
+            const student = await User.findOne(searchFilter).lean();
+
+            if (!student) {
                 return res.status(404).json({
                     success: false,
                     message: "Student not found."
                 });
             }
+
             return res.status(200).json({
                 success: true,
                 message: "Student retrieved successfully.",
-                students: [students],
+                students: [student],
                 pagination: {
                     total: 1,
                     page: 1,
@@ -194,12 +220,15 @@ const getAllStudents = async (req: Request, res: Response): Promise<Response> =>
         const pageNumber = Math.max(parseInt(page as string) || 1, 1);
         const limitNumber = Math.max(Math.min(parseInt(limit as string) || 10, 100), 1);
 
-        // Construct search filter
+        // Construct search filter for general listing
         const searchTerm = search ? String(search).trim() : "";
         const searchFilter = searchTerm
             ? {
                 role: "student",
-                name: { $regex: searchTerm, $options: "i" }
+                $or: [
+                    { firstName: { $regex: searchTerm, $options: "i" } },
+                    { lastName: { $regex: searchTerm, $options: "i" } },
+                ]
             }
             : { role: "student" };
 
@@ -548,6 +577,8 @@ const getUserById = async (req: Request, res: Response): Promise<Response> => {
         });
     }
 };
+
+
 
 
 const requestRoomApplication = async (req: Request, res: Response): Promise<Response> => {
@@ -944,6 +975,58 @@ const getMyAllNoticePayments = async (req: Request, res: Response): Promise<Resp
     }
 };
 
+const getMyNotificationEvicted = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params;
+        const { page, limit } = req.query as { page: string, limit: string };
+
+        // Validate userId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format."
+            });
+        }
+
+        // Parse pagination values with defaults
+        const pageNumber = Math.max(parseInt(page) || 1, 1);
+        const limitNumber = Math.max(Math.min(parseInt(limit) || 10, 100), 1);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        // Fetch eviction notifications for the user with pagination and sorting (latest first)
+        const evictions = await Eviction.find({ userId })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limitNumber)
+            .lean();
+
+        // Get total count for pagination
+        const totalEvictions = await Eviction.countDocuments({ userId });
+        const totalPages = Math.ceil(totalEvictions / limitNumber);
+
+        return res.status(200).json({
+            success: true,
+            message: "Eviction notifications retrieved successfully.",
+            evictions,
+            pagination: {
+                total: totalEvictions,
+                page: pageNumber,
+                limit: limitNumber,
+                totalPages,
+                hasNextPage: pageNumber < totalPages,
+                hasPrevPage: pageNumber > 1,
+            },
+        });
+    } catch (error: any) {
+        console.error("Error fetching eviction notifications:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
 
 const updateStatusOfNoticePayment = async (req: Request, res: Response): Promise<Response> => {
     try {
@@ -1316,7 +1399,7 @@ const updateApplicationDataWithInterviewScoring = async (
 const submitApplicationFormStudent = async (req: Request, res: Response): Promise<Response> => {
     try {
         const data: any = req.body;
-        console.log("data", data);
+        console.log("Received application data:", data);
 
         // Validate required fields
         if (!data.userId || !data.dormId || !data.roomId || !data.applicationFormUrl) {
@@ -1328,21 +1411,30 @@ const submitApplicationFormStudent = async (req: Request, res: Response): Promis
 
         // Check if an application already exists for the user
         const existingApplication = await Application.findOne({ userId: data.userId });
+
         if (existingApplication) {
-            return res.status(400).json({
-                success: false,
-                message: "An application already exists for this user."
-            });
+            if (["pending", "for-interview"].includes(existingApplication.status)) {
+                return res.status(400).json({
+                    success: false,
+                    message: "An application already exists and is currently in progress."
+                });
+            }
+
+            if (["approved", "rejected"].includes(existingApplication.status)) {
+                // Delete the existing application if it's "approved" or "rejected"
+                await Application.findByIdAndDelete(existingApplication._id);
+                console.log(`Deleted ${existingApplication.status} application for userId: ${data.userId}`);
+            }
         }
 
         // Create new application instance
         const newApplication = new Application({
             ...data,
-            createdAt: new Date(), // Assuming you want to track creation time
+            createdAt: new Date(), // Track creation time
             status: "pending" // Default status for new applications
         });
 
-        // Save to database
+        // Save new application to the database
         await newApplication.save();
 
         return res.status(201).json({
@@ -1679,4 +1771,58 @@ const updateDetailsByUserId = async (req: Request, res: Response): Promise<Respo
     }
 };
 
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId };
+const updateEvictionStatus = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params;
+
+        const evicted = true
+
+        console.log(`Updating eviction status for user ID: ${userId}`);
+
+        // Validate userId as a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format.",
+            });
+        }
+
+        // Ensure `evicted` is a boolean
+        if (typeof evicted !== "boolean") {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid 'evicted' value. Must be true or false.",
+            });
+        }
+
+        // Update user document
+        const updatedUser = await User.findByIdAndUpdate(
+            userId,
+            { evicted },
+            { new: true, lean: true }
+        );
+
+        if (!updatedUser) {
+            return res.status(404).json({
+                success: false,
+                message: `User not found with ID: ${userId}`,
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Eviction status updated successfully.",
+            user: updatedUser,
+        });
+    } catch (error: any) {
+        console.error(`Error updating eviction status for user ID ${req.params.userId}:`, error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus };

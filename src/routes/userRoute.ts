@@ -10,6 +10,8 @@ router.get("/students", userController.getAllStudents);
 
 router.post("/applicationform", userController.submitApplicationFormStudent);
 
+router.patch("/update-eviction-status/:userId", userController.updateEvictionStatus);
+
 router.post("/dorm", userController.createDorm);
 
 router.get("/dorms/:adminId", userController.getDormsByAdminId);
@@ -64,4 +66,6 @@ router.patch("/update-application-data/:applicationId", userController.updateApp
 router.patch("/update-dorms-and-rooms/:adminId", userController.updateDormsAndRoomsDetails);
 
 router.patch("/update-my-user-details/:userId", userController.updateDetailsByUserId);
+
+router.get("/my-notification-evicted/:userId", userController.getMyNotificationEvicted);
 export default router;
