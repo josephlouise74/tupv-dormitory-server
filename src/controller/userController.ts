@@ -727,7 +727,7 @@ const getAllApplicationsById = async (req: Request, res: Response): Promise<Resp
 const updateApplicationStatus = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { applicationId } = req.params;
-        const { status, adminId, userId, roomId, dormId, interview, selectedRoom } = req.body;
+        const { status, adminId, userId, roomId, roomName, interview, selectedRoom } = req.body;
 
         console.log("Received request body:", req.body);
 
@@ -825,6 +825,7 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
                     adminId,
                     roomId,
                     applicationId,
+                    roomName,
                     status: finalStatus,
                     ...(selectedRoom && { selectedRoom }) // Only include if selectedRoom is provided
                 }
@@ -1320,6 +1321,7 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
             lastName,
             phone,
             roomId,
+            roomName,
             adminId,
             applicationId,
             evictionReason,
@@ -1411,9 +1413,12 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
         // Delete the user account from the "users" collection
         await User.findByIdAndDelete(userId);
 
+        // Delete the application from the "applications" collection
+        await Application.findByIdAndDelete(applicationId);
+
         // Update the dorm room's maxPax: find the dorm by adminId and update the room with roomId
         const dormUpdate = await Dorm.updateOne(
-            { adminId: adminId, "rooms.roomId": roomId },
+            { adminId: adminId, "rooms.roomName": roomName },
             { $inc: { "rooms.$.maxPax": 1 } }
         );
         if (dormUpdate.modifiedCount === 0) {
@@ -1422,7 +1427,7 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
 
         return res.status(201).json({
             success: true,
-            message: "Eviction recorded successfully, email sent, user account deleted, and dorm room updated.",
+            message: "Eviction recorded successfully, email sent, user account and application deleted, and dorm room updated.",
             eviction: newEviction,
         });
     } catch (error: any) {
@@ -1434,6 +1439,7 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
         });
     }
 };
+
 
 
 

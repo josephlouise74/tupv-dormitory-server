@@ -46,6 +46,10 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: "",
     },
+    roomName: {
+        type: String,
+        default: "",
+    },
     status: {
         type: String,
         default: "pending",
