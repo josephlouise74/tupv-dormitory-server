@@ -2288,7 +2288,7 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
         }
 
         // Check if student exists
-        const studentExists = await User.findById(studentId);
+        const studentExists = await User.findOne({ studentId: studentId });
         if (!studentExists) {
             return res.status(404).json({
                 success: false,
