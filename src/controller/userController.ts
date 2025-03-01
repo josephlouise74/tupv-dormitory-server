@@ -917,37 +917,41 @@ const rejectApplication = async (req: Request, res: Response): Promise<Response>
 
 
 
-
 const scheduleInterviewApplication = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { applicationId } = req.params;
-        const { date, time, firstName, lastName, userId } = req.body;
-
+        const { applicationId } = req.params; // Get applicationId from params
+        const { date, time, firstName, lastName, email } = req.body; // Get date and time from request body
         console.log("Received request body:", time);
         console.log("Received applicationId:", applicationId);
-
+        // Validate applicationId
         if (!mongoose.Types.ObjectId.isValid(applicationId)) {
             return res.status(400).json({ success: false, message: "Invalid application ID." });
         }
 
+        // Validate date and time
         if (!date || !time) {
             return res.status(400).json({ success: false, message: "Date and time are required." });
         }
 
+        // Update application with interview details
         const updatedApplication = await Application.findByIdAndUpdate(applicationId, {
-            status: "for-interview",
-            interviewDate: date,
-            interviewTime: time
+            status: "for-interview", // Set status to "for-interview"
+            interviewDate: date, // Assuming you want to store the date
+            interviewTime: time // Assuming you want to store the time
         }, { new: true, runValidators: true }).lean();
 
         if (!updatedApplication) {
             return res.status(404).json({ success: false, message: "Application not found." });
         }
 
-        const emailSubject = "Scheduled Interview - TUPV Dormitory";
-        const emailBody = `
-            <div style="font-family: Arial, sans-serif; padding: 20px;">
-                <h2 style="color: #0056b3;">Interview Schedule</h2>
+        // Send eviction email notification to the student
+        const mailOptions = {
+            from: 'tupvdorm@gmail.com',
+            to: email,
+            subject: 'Scheduled Interview - TUPV Dormitory',
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2 style="color: #0056b3;">Interview Schedule</h2>
                 <p>Dear ${firstName} ${lastName},</p>
                 <p>We are pleased to inform you that your interview for the TUPV Dormitory accommodation has been scheduled. Below are the details:</p>
                 <ul style="line-height: 1.6;">
@@ -957,21 +961,16 @@ const scheduleInterviewApplication = async (req: Request, res: Response): Promis
                 </ul>
                 <p>Please make sure to be present at the designated time. If you have any questions, feel free to contact us at <strong>09569775622</strong>.</p>
                 <p>Best regards,<br/>TUPV Dormitory Administration</p>
-            </div>
-        `;
-
-        const mailOptions = {
-            from: 'josephlouisedeleon22@gmail.com',
-            to: userId,
-            subject: emailSubject,
-            html: emailBody
+                </div>
+            `
         };
 
         await transporter.sendMail(mailOptions);
 
+
         return res.status(200).json({
             success: true,
-            message: "Application status updated successfully and interview email sent.",
+            message: "Application status updated successfully.",
             application: updatedApplication,
         });
     } catch (error: any) {
@@ -983,6 +982,8 @@ const scheduleInterviewApplication = async (req: Request, res: Response): Promis
         });
     }
 };
+
+
 
 
 const getAllPendingApplicationsTotal = async (req: Request, res: Response): Promise<Response> => {
