@@ -1,13 +1,14 @@
-import { application, Request, Response } from "express";
 import bcrypt from "bcrypt";
-import User from "../models/user";
-import jwt from 'jsonwebtoken'
+import { Request, Response } from "express";
+import jwt from 'jsonwebtoken';
 import mongoose from "mongoose";
-import Dorm from "../models/dorm";
-import { Application } from "../models/applications";
-import NoticePayment from "../models/noticePayment";
-import Eviction from "../models/eviction";
 import nodemailer from "nodemailer";
+import { Application } from "../models/applications";
+import Attendance from "../models/attendance";
+import Dorm from "../models/dorm";
+import Eviction from "../models/eviction";
+import NoticePayment from "../models/noticePayment";
+import User from "../models/user";
 
 // Secret key for JWT (store this in an .env file)
 const JWT_SECRET = process.env.JWT_SECRET || "joseph123";
@@ -578,8 +579,35 @@ const getUserById = async (req: Request, res: Response): Promise<Response> => {
     }
 };
 
+const getStudentById = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { studentId } = req.params;
+        console.log("Searching for user with ID:", studentId);
 
+        // Find user by studentId in the "users" collection
+        const user = await User.findOne({ studentId: studentId }).lean();
 
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: `User not found with studentId: ${studentId}`,
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "User retrieved successfully.",
+            user,
+        });
+    } catch (error: any) {
+        console.error(`Error fetching user with studentId ${req.params.studentId}:`, error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
 
 const requestRoomApplication = async (req: Request, res: Response): Promise<Response> => {
     try {
@@ -1825,4 +1853,384 @@ const updateEvictionStatus = async (req: Request, res: Response): Promise<Respon
 };
 
 
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus };
+import { endOfDay, startOfDay } from 'date-fns'; // For date handling
+/**
+ * Get all attendance records with pagination, filtering, and search.
+ */
+const getAllAttendances = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { page, limit, search, startDate, endDate, status } = req.query as {
+            page?: string;
+            limit?: string;
+            search?: string;
+            startDate?: string;
+            endDate?: string;
+            status?: string;
+        };
+
+        // Parse pagination values with defaults and validation
+        const pageNumber = Math.max(parseInt(page as string) || 1, 1);
+        const limitNumber = Math.max(Math.min(parseInt(limit as string) || 10, 100), 1);
+
+        // Build filters
+        const filters: any = {};
+
+        // Date range filter
+        if (startDate || endDate) {
+            filters.date = {};
+            if (startDate) filters.date.$gte = new Date(startDate);
+            if (endDate) filters.date.$lte = new Date(endDate);
+        }
+
+        // Status filter
+        if (status && ['checked-in', 'checked-out', 'absent'].includes(status)) {
+            filters.status = status;
+        }
+
+        // Search filter on firstName, lastName, studentId, or email
+        if (search && search.trim()) {
+            const searchTerm = search.trim();
+            filters.$or = [
+                { firstName: { $regex: searchTerm, $options: "i" } },
+                { lastName: { $regex: searchTerm, $options: "i" } },
+                { studentId: { $regex: searchTerm, $options: "i" } },
+                { email: { $regex: searchTerm, $options: "i" } },
+            ];
+        }
+
+        // Get total count
+        const totalRecords = await Attendance.countDocuments(filters);
+        const totalPages = Math.ceil(totalRecords / limitNumber) || 1;
+        const validPage = Math.min(pageNumber, totalPages);
+        const skip = (validPage - 1) * limitNumber;
+
+        // Query attendances
+        const attendances = await Attendance.find(filters)
+            .sort({ date: -1, checkInTime: -1 }) // Latest first
+            .skip(skip)
+            .limit(limitNumber)
+            .lean();
+
+        return res.status(200).json({
+            success: true,
+            message: "Attendance records retrieved successfully.",
+            attendances,
+            pagination: {
+                total: totalRecords,
+                page: validPage,
+                limit: limitNumber,
+                totalPages,
+                hasNextPage: validPage < totalPages,
+                hasPrevPage: validPage > 1,
+            },
+        });
+    } catch (error: any) {
+        console.error("Error fetching attendance records:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve attendance records.",
+            error: process.env.NODE_ENV === "production" ? "Internal server error" : error.message,
+        });
+    }
+};
+
+/**
+ * Get today's attendance for a specific student.
+ */
+const getTodayAttendance = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { studentId } = req.params;
+        if (!studentId) {
+            return res.status(400).json({
+                success: false,
+                message: "Student ID is required",
+            });
+        }
+
+        const today = new Date();
+        const todayStart = startOfDay(today);
+        const todayEnd = endOfDay(today);
+
+        // Find today's attendance record for the student
+        const attendanceRecord = await Attendance.findOne({
+            studentId,
+            date: { $gte: todayStart, $lte: todayEnd },
+        }).lean();
+
+        return res.status(200).json({
+            success: true,
+            message: attendanceRecord
+                ? "Today's attendance record found"
+                : "No attendance record for today",
+            data: attendanceRecord || null,
+            checkInStatus: !attendanceRecord
+                ? "not-checked-in"
+                : attendanceRecord.checkOutTime
+                    ? "checked-out"
+                    : "checked-in",
+        });
+    } catch (error: any) {
+        console.error("Error fetching today's attendance:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve today's attendance record",
+            error: process.env.NODE_ENV === "production" ? "Internal server error" : error.message,
+        });
+    }
+};
+
+/**
+ * Record student check-in.
+ */
+const recordCheckIn = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { studentId } = req.params;
+        const { email, firstName, lastName, notes } = req.body;
+
+        // Validate required fields
+        if (!studentId || !email || !firstName || !lastName) {
+            return res.status(400).json({
+                success: false,
+                message: "Student ID, email, first name, and last name are required",
+            });
+        }
+
+        // Get today's boundaries
+        const today = new Date();
+        const todayStart = startOfDay(today);
+        const todayEnd = endOfDay(today);
+
+        // Find the most recent attendance record for today for this student
+        const existingRecord = await Attendance.findOne({
+            studentId,
+            date: { $gte: todayStart, $lte: todayEnd },
+        }).sort({ createdAt: -1 });
+
+        const currentTime = new Date();
+
+        // CASE 1: No record exists for today → Create a new record with checkInTime
+        if (!existingRecord) {
+            const newAttendance = new Attendance({
+                studentId,
+                firstName,
+                lastName,
+                email,
+                date: today, // Store the full date
+                checkInTime: currentTime,
+                checkOutTime: null,
+                status: "checked-in",
+                notes: notes || "",
+                adminId: "67b6122b87e0d9aae35ffdd6", // default admin
+            });
+
+            await newAttendance.save();
+
+            return res.status(201).json({
+                success: true,
+                message: "New check-in recorded successfully",
+                data: newAttendance,
+            });
+        }
+
+        // CASE 2: Record exists for today and checkInTime is set, but checkOutTime is missing → Update checkOutTime
+        if (existingRecord.checkInTime && !existingRecord.checkOutTime) {
+            existingRecord.checkOutTime = currentTime;
+            existingRecord.status = "checked-out";
+            // Calculate duration in hours
+            const durationMs = currentTime.getTime() - new Date(existingRecord.checkInTime).getTime();
+            const durationHours = durationMs / (1000 * 60 * 60);
+            existingRecord.durationHours = parseFloat(durationHours.toFixed(2));
+
+            if (notes) {
+                existingRecord.notes = existingRecord.notes
+                    ? `${existingRecord.notes}\nCheckout notes: ${notes}`
+                    : `Checkout notes: ${notes}`;
+            }
+            await existingRecord.save();
+
+            return res.status(200).json({
+                success: true,
+                message: "Check-out recorded successfully",
+                data: existingRecord,
+            });
+        }
+
+        // CASE 3: Record exists for today with both checkInTime and checkOutTime → Create a new record (new check-in cycle)
+        if (existingRecord.checkInTime && existingRecord.checkOutTime) {
+            const newAttendance = new Attendance({
+                studentId,
+                firstName,
+                lastName,
+                email,
+                date: today, // still store today’s date
+                checkInTime: currentTime,
+                checkOutTime: null,
+                status: "checked-in",
+                notes: notes || "",
+                adminId: "67b6122b87e0d9aae35ffdd6", // default admin
+            });
+
+            await newAttendance.save();
+
+            return res.status(201).json({
+                success: true,
+                message: "New check-in cycle started successfully",
+                data: newAttendance,
+            });
+        }
+
+        // Fallback – should not reach here
+        return res.status(400).json({
+            success: false,
+            message: "Unexpected attendance record state",
+            data: existingRecord,
+        });
+    } catch (error: any) {
+        console.error("Error recording check-in/out:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to record attendance",
+            error: process.env.NODE_ENV === "production" ? "Internal server error" : error.message,
+        });
+    }
+};
+
+
+/**
+ * Record student check-out.
+ */
+const recordCheckOut = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { studentId } = req.params;
+        const { notes } = req.body;
+        const checkOutStatus = "completed";
+        if (!studentId) {
+            return res.status(400).json({
+                success: false,
+                message: "Student ID is required",
+            });
+        }
+
+        const today = new Date();
+        const todayStart = startOfDay(today);
+        const todayEnd = endOfDay(today);
+
+        // Find today's active check-in record
+        const attendanceRecord = await Attendance.findOne({
+            studentId,
+            date: { $gte: todayStart, $lte: todayEnd },
+            status: "checked-in",
+        });
+
+        if (!attendanceRecord) {
+            return res.status(404).json({
+                success: false,
+                message: "No active check-in record found for today",
+            });
+        }
+
+        const checkOutTime = new Date();
+        const durationMs = checkOutTime.getTime() - new Date(attendanceRecord.checkInTime).getTime();
+        const durationHours = durationMs / (1000 * 60 * 60);
+
+        attendanceRecord.checkOutTime = checkOutTime;
+        attendanceRecord.status = "checked-out";
+        attendanceRecord.checkOutStatus = checkOutStatus || null;
+        attendanceRecord.durationHours = parseFloat(durationHours.toFixed(2));
+
+        if (notes) {
+            attendanceRecord.notes = attendanceRecord.notes
+                ? `${attendanceRecord.notes}\nCheckout notes: ${notes}`
+                : `Checkout notes: ${notes}`;
+        }
+
+        await attendanceRecord.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Check-out recorded successfully",
+            data: attendanceRecord,
+        });
+    } catch (error: any) {
+        console.error("Error recording check-out:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to record check-out",
+            error: process.env.NODE_ENV === "production" ? "Internal server error" : error.message,
+        });
+    }
+};
+
+/**
+ * Get attendance stats for a date range.
+ */
+const getAttendanceStats = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { startDate, endDate } = req.query as {
+            startDate?: string;
+            endDate?: string;
+        };
+
+        // Default to this month if no dates provided
+        const start = startDate ? new Date(startDate) : startOfDay(new Date(new Date().setDate(1)));
+        const end = endDate ? new Date(endDate) : endOfDay(new Date());
+
+        // Aggregate stats by status
+        const stats = await Attendance.aggregate([
+            {
+                $match: {
+                    date: { $gte: start, $lte: end },
+                },
+            },
+            {
+                $group: {
+                    _id: "$status",
+                    count: { $sum: 1 },
+                },
+            },
+        ]);
+
+        const formattedStats: Record<string, number> = {
+            "checked-in": 0,
+            "checked-out": 0,
+            absent: 0,
+        };
+
+        stats.forEach(stat => {
+            formattedStats[stat._id] = stat.count;
+        });
+
+        // Get unique student count in the date range
+        const uniqueStudents = await Attendance.distinct("studentId", {
+            date: { $gte: start, $lte: end },
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Attendance statistics retrieved successfully",
+            data: {
+                stats: formattedStats,
+                totalRecords:
+                    formattedStats["checked-in"] +
+                    formattedStats["checked-out"] +
+                    formattedStats["absent"],
+                uniqueStudents: uniqueStudents.length,
+                dateRange: {
+                    start,
+                    end,
+                },
+            },
+        });
+    } catch (error: any) {
+        console.error("Error fetching attendance statistics:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Failed to retrieve attendance statistics",
+            error: process.env.NODE_ENV === "production" ? "Internal server error" : error.message,
+        });
+    }
+};
+
+
+
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance };

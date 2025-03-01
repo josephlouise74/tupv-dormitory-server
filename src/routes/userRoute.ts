@@ -7,6 +7,7 @@ router.post("/signup", userController.createUser);
 router.post("/signin", userController.signInUser);
 
 router.get("/students", userController.getAllStudents);
+router.get("/st", userController.getAllAttendances);
 
 router.post("/applicationform", userController.submitApplicationFormStudent);
 
@@ -68,4 +69,10 @@ router.patch("/update-dorms-and-rooms/:adminId", userController.updateDormsAndRo
 router.patch("/update-my-user-details/:userId", userController.updateDetailsByUserId);
 
 router.get("/my-notification-evicted/:userId", userController.getMyNotificationEvicted);
+
+router.get("/student/:studentId", userController.getStudentById);
+
+
+
+
 export default router;

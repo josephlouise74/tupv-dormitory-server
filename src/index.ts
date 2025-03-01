@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import userRoute from './routes/userRoute';
 import { SeleniumHelper } from './seleniumHelper';
-
+import attendanceRoute from './routes/attendanceRoute';
 // Load environment variables from .env file
 dotenv.config();
 
@@ -40,6 +40,7 @@ app.get("/health", (_req, res) => res.send({ message: "Health OK!" }));
 
 
 app.use("/api/v1/user", userRoute);
+app.use("/api/v1/attendance", attendanceRoute);
 
 app.get("/login", async (req, res) => {
     const seleniumHelper = new SeleniumHelper();
