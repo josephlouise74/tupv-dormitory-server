@@ -800,7 +800,9 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
                     <li><strong>Reason:</strong> Unfortunately, we are unable to accommodate your request at this time.</li>
                 </ul>
                 <p>If you have any questions regarding this decision, please contact the housing office immediately.</p>
-                <p>Sincerely,<br/>TUPV Dormitory Administration</p>
+               
+                <p>Best regards,<br/>TUPV Dormitory Administration</p>
+                <strong>09569775622</strong>
             </div>
         `;
 
@@ -916,37 +918,60 @@ const rejectApplication = async (req: Request, res: Response): Promise<Response>
 
 
 
-
 const scheduleInterviewApplication = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { applicationId } = req.params; // Get applicationId from params
-        const { date, time } = req.body; // Get date and time from request body
+        const { applicationId } = req.params;
+        const { date, time, firstName, lastName, userId } = req.body;
+
         console.log("Received request body:", time);
         console.log("Received applicationId:", applicationId);
-        // Validate applicationId
+
         if (!mongoose.Types.ObjectId.isValid(applicationId)) {
             return res.status(400).json({ success: false, message: "Invalid application ID." });
         }
 
-        // Validate date and time
         if (!date || !time) {
             return res.status(400).json({ success: false, message: "Date and time are required." });
         }
 
-        // Update application with interview details
         const updatedApplication = await Application.findByIdAndUpdate(applicationId, {
-            status: "for-interview", // Set status to "for-interview"
-            interviewDate: date, // Assuming you want to store the date
-            interviewTime: time // Assuming you want to store the time
+            status: "for-interview",
+            interviewDate: date,
+            interviewTime: time
         }, { new: true, runValidators: true }).lean();
 
         if (!updatedApplication) {
             return res.status(404).json({ success: false, message: "Application not found." });
         }
 
+        const emailSubject = "Scheduled Interview - TUPV Dormitory";
+        const emailBody = `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2 style="color: #0056b3;">Interview Schedule</h2>
+                <p>Dear ${firstName} ${lastName},</p>
+                <p>We are pleased to inform you that your interview for the TUPV Dormitory accommodation has been scheduled. Below are the details:</p>
+                <ul style="line-height: 1.6;">
+                    <li><strong>Application ID:</strong> ${applicationId}</li>
+                    <li><strong>Interview Date:</strong> ${date}</li>
+                    <li><strong>Interview Time:</strong> ${time}</li>
+                </ul>
+                <p>Please make sure to be present at the designated time. If you have any questions, feel free to contact us at <strong>09569775622</strong>.</p>
+                <p>Best regards,<br/>TUPV Dormitory Administration</p>
+            </div>
+        `;
+
+        const mailOptions = {
+            from: 'josephlouisedeleon22@gmail.com',
+            to: userId,
+            subject: emailSubject,
+            html: emailBody
+        };
+
+        await transporter.sendMail(mailOptions);
+
         return res.status(200).json({
             success: true,
-            message: "Application status updated successfully.",
+            message: "Application status updated successfully and interview email sent.",
             application: updatedApplication,
         });
     } catch (error: any) {
@@ -1382,6 +1407,7 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
                     </ul>
                     <p>If you have any questions regarding this decision, please contact the housing office immediately.</p>
                     <p>Sincerely,<br/>Administration Team</p>
+                    <strong>09569775622</strong>
                 </div>
             `
         };
@@ -1725,6 +1751,7 @@ const sendOTPEmail = async (email: string, otp: string): Promise<void> => {
                 <p>This OTP will expire in 10 minutes.</p>
                 <p>If you didn't request this password reset, please ignore this email.</p>
                 <p>Best regards,<br>Your Application Team</p>
+                <strong>09569775622</strong>
             </div>
         `
     };
@@ -1797,6 +1824,8 @@ const initiatePasswordReset = async (req: Request, res: Response): Promise<Respo
                     <h1 style="color: #8b2131; font-size: 32px; letter-spacing: 2px;">${otp}</h1>
                     <p>This code will expire in 10 minutes.</p>
                     <p>If you didn't request this code, please ignore this email.</p>
+                    <p>Best regards,<br>TUPV Dormitory</p>
+                    <strong>09569775622</strong>
                 </div>
             `
         };
