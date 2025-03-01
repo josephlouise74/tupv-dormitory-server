@@ -11,6 +11,7 @@ router.get("/st", userController.getAllAttendances);
 
 router.post("/applicationform", userController.submitApplicationFormStudent);
 
+router.patch("/reject-application/:applicationId", userController.rejectApplication);
 router.patch("/update-eviction-status/:userId", userController.updateEvictionStatus);
 
 router.post("/dorm", userController.createDorm);

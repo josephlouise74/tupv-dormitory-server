@@ -737,11 +737,22 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
         }
 
         // Validate required fields
-        if (!adminId || !userId || !roomId || !dormId) {
-            return res.status(400).json({ success: false, message: "Missing required fields." });
+        if (!adminId || !userId) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing required fields. adminId, userId, roomId, and dormId are required."
+            });
         }
 
-        // Determine final status
+        // Find the application to get its current status
+        const application = await Application.findById(applicationId);
+        if (!application) {
+            return res.status(404).json({ success: false, message: "Application not found." });
+        }
+
+        const previousStatus = application.status;
+
+        // Determine final status: if interview is true, override status to "for-interview"
         const finalStatus = interview ? "for-interview" : status;
 
         // Update application status and selectedRoom
@@ -750,54 +761,84 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
             {
                 $set: {
                     status: finalStatus,
-                    selectedRoom: selectedRoom || undefined // Update selectedRoom if provided
+                    ...(selectedRoom && { selectedRoom }) // Only include if selectedRoom is provided
                 }
             },
             { new: true, runValidators: true }
         ).lean();
 
-        if (!updatedApplication) {
-            return res.status(404).json({ success: false, message: "Application not found." });
-        }
+        // Find the room directly using $elemMatch to identify the specific room
+        const dorm = await Dorm.findOne({
+            adminId,
+            "rooms._id": roomId
+        });
 
-        // Find the dorm associated with the admin
-        const dorm = await Dorm.findOne({ adminId });
         if (!dorm) {
-            return res.status(404).json({ success: false, message: "Dorm not found for this admin." });
+            return res.status(404).json({
+                success: false,
+                message: "Dorm or room not found for this admin."
+            });
         }
 
-        // Find the specific room inside the dorm's rooms array
-        const roomIndex = dorm.rooms.findIndex(room => room.roomName.toString() === roomId);
-        if (roomIndex === -1) {
+        // Get the room data before updating
+        const roomData = dorm.rooms.find(room => room._id.toString() === roomId);
+        if (!roomData) {
             return res.status(404).json({ success: false, message: "Room not found in the dorm." });
         }
 
-        // Only reduce maxPax if the status is NOT "for-interview" or "pending"
-        if (finalStatus !== "for-interview" && finalStatus !== "pending") {
-            dorm.rooms[roomIndex].maxPax = Math.max(0, dorm.rooms[roomIndex].maxPax - 1);
+        let newMaxPax = roomData.maxPax;
+        // Determine new maxPax value based on status change
+        if (previousStatus !== finalStatus) {
+            if (finalStatus === "approved") {
+                // Decrease maxPax when approving an applicant
+                newMaxPax = Math.max(0, roomData.maxPax - 1);
+            } else if (finalStatus === "rejected" && previousStatus === "approved") {
+                // Increase maxPax when changing from approved to rejected
+                newMaxPax = roomData.maxPax + 1;
+            }
         }
 
-        // Save the updated dorm only if maxPax was modified
-        await dorm.save();
-
-        // Update the user's information with the adminId, roomId, applicationId, and selectedRoom
-        await User.findByIdAndUpdate(userId, {
-            $set: {
+        // Update the room's maxPax using direct MongoDB update with $ positional operator
+        await Dorm.updateOne(
+            {
                 adminId,
-                roomId,
-                applicationId,
-                status,
-                selectedRoom: selectedRoom || undefined // Update selectedRoom if provided
+                "rooms._id": new mongoose.Types.ObjectId(roomId)
+            },
+            {
+                $set: { "rooms.$.maxPax": newMaxPax }
             }
-        }, { new: true, runValidators: true });
+        );
+
+        // Fetch the updated room data
+        const updatedDorm = await Dorm.findOne({
+            adminId,
+            "rooms._id": new mongoose.Types.ObjectId(roomId)
+        });
+
+        const updatedRoomData = updatedDorm?.rooms.find(room => room._id.toString() === roomId);
+
+        // Update the user's information
+        await User.findByIdAndUpdate(
+            userId,
+            {
+                $set: {
+                    adminId,
+                    roomId,
+                    applicationId,
+                    status: finalStatus,
+                    ...(selectedRoom && { selectedRoom }) // Only include if selectedRoom is provided
+                }
+            },
+            { new: true, runValidators: true }
+        );
 
         return res.status(200).json({
             success: true,
             message: "Application status updated successfully.",
             application: updatedApplication,
-            updatedMaxPax: dorm.rooms[roomIndex].maxPax
+            room: updatedRoomData,
+            updatedMaxPax: updatedRoomData?.maxPax
         });
-
     } catch (error: any) {
         console.error("Error updating application status:", error);
         return res.status(500).json({
@@ -809,8 +850,93 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
 };
 
 
+const rejectApplication = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { applicationId } = req.params;
+        const { adminId, userId, roomId } = req.body;
 
-// ... existing code ...
+        // Validate applicationId
+        if (!mongoose.isValidObjectId(applicationId)) {
+            return res.status(400).json({ success: false, message: "Invalid application ID." });
+        }
+
+        // Validate required fields for application update
+        if (!adminId || !userId) {
+            return res.status(400).json({
+                success: false,
+                message: "Missing required fields. adminId and userId are required."
+            });
+        }
+
+        // Find the application to get its current status
+        const application = await Application.findById(applicationId);
+        if (!application) {
+            return res.status(404).json({ success: false, message: "Application not found." });
+        }
+        const previousStatus = application.status;
+
+        // Update application status to "rejected"
+        const updatedApplication = await Application.findByIdAndUpdate(
+            applicationId,
+            { $set: { status: "rejected" } },
+            { new: true, runValidators: true }
+        ).lean();
+
+        let updatedRoomData = null;
+
+        // If roomId is provided and valid, update the room's maxPax
+        if (roomId && mongoose.isValidObjectId(roomId)) {
+            // Find the dorm and the specific room using adminId and roomId
+            const dorm = await Dorm.findOne({
+                adminId,
+                "rooms._id": roomId
+            });
+
+            if (dorm) {
+                // Find the specific room in the dorm
+                const roomData = dorm.rooms.find(room => room._id.toString() === roomId);
+                if (roomData) {
+                    // If the application was previously "approved", increase maxPax by 1
+                    let newMaxPax = roomData.maxPax;
+                    if (previousStatus === "approved") {
+                        newMaxPax += 1;
+                    }
+
+                    // Update the room's maxPax
+                    await Dorm.updateOne(
+                        {
+                            adminId,
+                            "rooms._id": roomId
+                        },
+                        { $set: { "rooms.$.maxPax": newMaxPax } }
+                    );
+
+                    updatedRoomData = { ...roomData, maxPax: newMaxPax };
+                }
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Application rejected successfully.",
+            application: updatedApplication,
+            updatedRoom: updatedRoomData
+        });
+    } catch (error: any) {
+        console.error("Error rejecting application:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+
+
+
+
 
 const scheduleInterviewApplication = async (req: Request, res: Response): Promise<Response> => {
     try {
@@ -886,7 +1012,8 @@ const getAllPendingApplicationsTotal = async (req: Request, res: Response): Prom
 }
 
 
-export const sendNoticePaymentForStudent = async (req: Request, res: Response): Promise<Response> => {
+
+const sendNoticePaymentForStudent = async (req: Request, res: Response): Promise<Response> => {
     try {
         const {
             userId,
@@ -899,11 +1026,12 @@ export const sendNoticePaymentForStudent = async (req: Request, res: Response): 
             lastName,
             phone,
             role,
-            roomId
+            roomId,
+            adminId,  // now required for dorm lookup
         } = req.body;
 
         // Validate required fields
-        if (!userId || !amount || !dueDate || !description || !studentId || !roomId) {
+        if (!userId || !amount || !dueDate || !description || !studentId || !roomId || !adminId) {
             return res.status(400).json({
                 success: false,
                 message: "All fields are required.",
@@ -930,24 +1058,42 @@ export const sendNoticePaymentForStudent = async (req: Request, res: Response): 
         await noticePayment.save();
 
         // Update the user's roomId
-        const user = await User.findByIdAndUpdate(
+        const updatedUser = await User.findByIdAndUpdate(
             userId,
             { roomId },
             { new: true }
         );
 
-        if (!user) {
+        if (!updatedUser) {
             return res.status(404).json({
                 success: false,
                 message: "User not found.",
             });
         }
 
+        // Find the dorm by adminId
+        let updatedMaxPax: number | undefined = undefined;
+        const dorm = await Dorm.findOne({ adminId });
+        if (dorm) {
+            // Find the specific room inside the dorm's rooms array by matching roomId
+            const roomIndex = dorm.rooms.findIndex(room => room.roomId.toString() === roomId);
+            if (roomIndex !== -1) {
+                dorm.rooms[roomIndex].maxPax += 1;
+                await dorm.save();
+                updatedMaxPax = dorm.rooms[roomIndex].maxPax;
+            } else {
+                console.warn(`Room with id ${roomId} not found in dorm for adminId ${adminId}.`);
+            }
+        } else {
+            console.warn(`Dorm not found for adminId: ${adminId}.`);
+        }
+
         return res.status(201).json({
             success: true,
             message: "Notice payment sent successfully.",
             noticePayment,
-            updatedUser: user
+            updatedUser,
+            updatedMaxPax
         });
 
     } catch (error: any) {
@@ -959,6 +1105,7 @@ export const sendNoticePaymentForStudent = async (req: Request, res: Response): 
         });
     }
 };
+
 
 
 const getMyAllNoticePayments = async (req: Request, res: Response): Promise<Response> => {
@@ -2105,7 +2252,7 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                 firstName,
                 lastName,
                 email,
-                date: today, // still store today’s date
+                date: today, // still store today's date
                 checkInTime: currentTime,
                 checkOutTime: null,
                 status: "checked-in",
@@ -2276,4 +2423,4 @@ const getAttendanceStats = async (req: Request, res: Response): Promise<Response
 
 
 
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance };
+export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance, rejectApplication };
