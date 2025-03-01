@@ -27,8 +27,8 @@ declare global {
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'josephlouisedeleon22@gmail.com', // Replace with your email
-        pass: 'ahua lqqx zydm zgam'
+        user: 'tupvdorm@gmail.com', // Replace with your email
+        pass: 'pufu brdg xujr eyox'
     }
 });
 
@@ -805,7 +805,7 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
         `;
 
         const mailOptions = {
-            from: 'josephlouisedeleon22@gmail.com',
+            from: 'tupvdorm@gmail.com',
             to: userId,
             subject: emailSubject,
             html: emailBody
@@ -1365,7 +1365,7 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
 
         // Send eviction email notification to the student
         const mailOptions = {
-            from: 'josephlouisedeleon22@gmail.com',
+            from: 'tupvdorm@gmail.com',
             to: email,
             subject: 'Important: Eviction Notice',
             html: `
@@ -1714,7 +1714,7 @@ const generateOTP = (): string => {
 // Email sending utility function with proper error handling
 const sendOTPEmail = async (email: string, otp: string): Promise<void> => {
     const mailOptions = {
-        from: 'your-email@gmail.com', // Replace with your email
+        from: 'tupvdorm@gmail.com', // Replace with your email
         to: email,
         subject: 'Password Reset OTP',
         html: `
@@ -1787,7 +1787,7 @@ const initiatePasswordReset = async (req: Request, res: Response): Promise<Respo
 
         // Send OTP email
         const mailOptions = {
-            from: 'josephlouisedeleon22@gmail.com',
+            from: 'tupvdorm@gmail.com',
             to: normalizedEmail,
             subject: 'Password Reset Code',
             html: `
