@@ -40,6 +40,7 @@ app.get("/health", (_req, res) => res.send({ message: "Health OK!" }));
 
 
 app.use("/api/v1/user", userRoute);
+
 app.use("/api/v1/attendance", attendanceRoute);
 
 app.get("/login", async (req, res) => {

@@ -23,6 +23,16 @@ declare global {
     }
 }
 
+// Configure nodemailer transporter
+const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+        user: 'josephlouisedeleon22@gmail.com', // Replace with your email
+        pass: 'ahua lqqx zydm zgam'
+    }
+});
+
+
 const createUser = async (req: Request, res: Response): Promise<any> => {
     try {
         const { firstName, middleName, lastName, email, password, confirmPassword, phone, studentId, role } = req.body;
@@ -1152,6 +1162,7 @@ const deleteApplication = async (req: Request, res: Response): Promise<Response>
     }
 };
 
+
 const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<Response> => {
     try {
         const {
@@ -1168,7 +1179,9 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
             evictionNoticeDate,
             evictionNoticeTime,
         } = req.body;
-        console.log(req.body);
+
+        console.log("Eviction Request Body:", req.body);
+
         // Validate required fields
         if (!userId || !studentId || !roomId || !applicationId || !evictionReason || !evictionNoticeDate || !evictionNoticeTime) {
             return res.status(400).json({
@@ -1177,7 +1190,7 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
             });
         }
 
-        // Find the application by applicationId
+        // Find the application by applicationId and update it with eviction details
         const application = await Application.findById(applicationId);
         if (!application) {
             return res.status(404).json({
@@ -1185,15 +1198,13 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
                 message: "Application not found.",
             });
         }
+        application.evicted = true;
+        application.evictionNoticeDate = evictionNoticeDate;
+        application.evictionNoticeTime = evictionNoticeTime;
+        application.evictionReason = evictionReason;
+        await application.save();
 
-        // Update the application to set eviction to true
-        application.evicted = true; // Add eviction field
-        application.evictionNoticeDate = evictionNoticeDate; // Add eviction field
-        application.evictionNoticeTime = evictionNoticeTime; // Add eviction field
-        application.evictionReason = evictionReason; // Add eviction field
-        await application.save(); // Save the updated application
-
-        // Find the user by userId
+        // Find the user by userId and update with eviction details
         const user = await User.findById(userId);
         if (!user) {
             return res.status(404).json({
@@ -1201,13 +1212,10 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
                 message: "User not found.",
             });
         }
-
-        // Update the user's eviction details
         user.evicted = true;
         user.evictionNoticeDate = evictionNoticeDate;
         user.evictionNoticeTime = evictionNoticeTime;
         user.evictionReason = evictionReason;
-        user.userId = userId;
         await user.save();
 
         // Create and store a new eviction record
@@ -1226,15 +1234,50 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
             evictionNoticeTime,
             evicted: true,
         });
-
         await newEviction.save();
+
+        // Send eviction email notification to the student
+        const mailOptions = {
+            from: 'josephlouisedeleon22@gmail.com',
+            to: email,
+            subject: 'Important: Eviction Notice',
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                    <h2 style="color: #8b2131;">Eviction Notice</h2>
+                    <p>Dear ${firstName} ${lastName},</p>
+                    <p>We regret to inform you that you have been evicted from your accommodation. Below are the details of your eviction:</p>
+                    <ul style="line-height: 1.6;">
+                        <li><strong>Student ID:</strong> ${studentId}</li>
+                        <li><strong>Room ID:</strong> ${roomId}</li>
+                        <li><strong>Reason:</strong> ${evictionReason}</li>
+                        <li><strong>Notice Date:</strong> ${evictionNoticeDate}</li>
+                        <li><strong>Notice Time:</strong> ${evictionNoticeTime}</li>
+                    </ul>
+                    <p>If you have any questions regarding this decision, please contact the housing office immediately.</p>
+                    <p>Sincerely,<br/>Administration Team</p>
+                </div>
+            `
+        };
+
+        await transporter.sendMail(mailOptions);
+
+        // Delete the user account from the "users" collection
+        await User.findByIdAndDelete(userId);
+
+        // Update the dorm room's maxPax: find the dorm by adminId and update the room with roomId
+        const dormUpdate = await Dorm.updateOne(
+            { adminId: adminId, "rooms.roomId": roomId },
+            { $inc: { "rooms.$.maxPax": 1 } }
+        );
+        if (dormUpdate.modifiedCount === 0) {
+            console.warn(`No dorm room updated for adminId ${adminId} and roomId ${roomId}`);
+        }
 
         return res.status(201).json({
             success: true,
-            message: "Eviction recorded successfully.",
+            message: "Eviction recorded successfully, email sent, user account deleted, and dorm room updated.",
             eviction: newEviction,
         });
-
     } catch (error: any) {
         console.error("Error processing eviction:", error);
         return res.status(500).json({
@@ -1244,7 +1287,6 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
         });
     }
 };
-
 
 
 
@@ -1537,14 +1579,6 @@ const generateOTP = (): string => {
     return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// Configure nodemailer transporter
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: 'josephlouisedeleon22@gmail.com', // Replace with your email
-        pass: 'ahua lqqx zydm zgam'
-    }
-});
 
 // Email sending utility function with proper error handling
 const sendOTPEmail = async (email: string, otp: string): Promise<void> => {
@@ -1576,8 +1610,6 @@ const initiatePasswordReset = async (req: Request, res: Response): Promise<Respo
     try {
         const { email } = req.params;
 
-        console.log("email", email)
-        // Input validation
         if (!email) {
             return res.status(400).json({
                 success: false,
@@ -1586,12 +1618,22 @@ const initiatePasswordReset = async (req: Request, res: Response): Promise<Respo
         }
 
         const normalizedEmail = email.toLowerCase().trim();
-        console.log("normalizedEmail", normalizedEmail)
-        // Find user by email (case-insensitive)
-        const user = await User.findOne({
-            email: { $regex: new RegExp(`^${normalizedEmail}$`, 'i') }
-        });
+        console.log("🔍 Searching for email:", normalizedEmail);
+
+        // Find user by email (case-insensitive, using collation)
+        const user = await User.findOne(
+            { email: normalizedEmail },
+            null,
+            { collation: { locale: "en", strength: 2 } } // Case-insensitive collation
+        );
+
+        console.log("👤 User found:", user);
+
         if (!user) {
+            // Debugging query if user not found
+            const existingEmails = await User.find({}, { email: 1 });
+            console.log("📋 Existing Emails in DB:", existingEmails);
+
             return res.status(404).json({
                 success: false,
                 message: "No account found with this email address"
@@ -1600,7 +1642,7 @@ const initiatePasswordReset = async (req: Request, res: Response): Promise<Respo
 
         // Generate 6-digit OTP
         const otp = Math.floor(100000 + Math.random() * 900000).toString();
-        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
 
         // Update user with OTP details
         await User.findByIdAndUpdate(
@@ -1636,13 +1678,14 @@ const initiatePasswordReset = async (req: Request, res: Response): Promise<Respo
         });
 
     } catch (error: any) {
-        console.error("Password reset initiation error:", error);
+        console.error("❌ Password reset initiation error:", error);
         return res.status(500).json({
             success: false,
             message: "Failed to send verification code"
         });
     }
 };
+
 
 const verifyOTP = async (req: Request, res: Response): Promise<Response> => {
     try {
