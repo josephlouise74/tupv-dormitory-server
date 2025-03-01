@@ -727,7 +727,7 @@ const getAllApplicationsById = async (req: Request, res: Response): Promise<Resp
 const updateApplicationStatus = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { applicationId } = req.params;
-        const { status, adminId, userId, roomId, roomName, interview, selectedRoom, firstName, lastName, studentId } = req.body;
+        const { status, adminId, userId, roomId, roomName, interview, selectedRoom, firstName, lastName, email } = req.body;
 
         console.log("Received request body:", req.body);
 
@@ -808,7 +808,7 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
 
         const mailOptions = {
             from: 'tupvdorm@gmail.com',
-            to: userId,
+            to: email,
             subject: emailSubject,
             html: emailBody
         };
@@ -834,7 +834,7 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
 const rejectApplication = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { applicationId } = req.params;
-        const { adminId, userId, roomId } = req.body;
+        const { adminId, userId, roomId, email, name } = req.body;
 
         // Validate applicationId
         if (!mongoose.isValidObjectId(applicationId)) {
@@ -896,6 +896,31 @@ const rejectApplication = async (req: Request, res: Response): Promise<Response>
                 }
             }
         }
+
+        const mailOptions = {
+            from: '"TUPV Dormitory" <tupvdorm@gmail.com>',
+            to: email,
+            subject: 'Application Rejection Notice',
+            html: `
+                <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; color: #333;">
+                    <h2 style="color: #8b2131;">Application Rejection Notice</h2>
+                    <p>Dear <strong>${name}</strong>,</p>
+                    <p>We regret to inform you that your dormitory application has been <strong>rejected</strong>.</p>
+                    <p>Below are the details of your application:</p>
+                    <ul>
+                        <li><strong>Application ID:</strong> ${applicationId}</li>
+                        ${roomId ? `<li><strong>Room ID:</strong> ${roomId}</li>` : ''}
+                    </ul>
+                    <p>If you have any questions regarding this decision, please contact the dormitory administration.</p>
+                    <p>We appreciate your interest and encourage you to apply again in the future.</p>
+                    <p>Best regards,<br><strong>Administration Team</strong></p>
+                    <p>📞 <strong>09569775622</strong></p>
+                </div>
+            `,
+        };
+
+        // Send email
+        await transporter.sendMail(mailOptions);
 
         return res.status(200).json({
             success: true,
@@ -1388,32 +1413,35 @@ const sendStudentEvictionNotice = async (req: Request, res: Response): Promise<R
             evicted: true,
         });
         await newEviction.save();
-
-        // Send eviction email notification to the student
+        console.log("rejcttss email", email)
         const mailOptions = {
-            from: 'tupvdorm@gmail.com',
+            from: '"TUPV Dormitory" <tupvdorm@gmail.com>',
             to: email,
             subject: 'Important: Eviction Notice',
             html: `
-                <div style="font-family: Arial, sans-serif; padding: 20px;">
+                <div style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; color: #333;">
                     <h2 style="color: #8b2131;">Eviction Notice</h2>
-                    <p>Dear ${firstName} ${lastName},</p>
-                    <p>We regret to inform you that you have been evicted from your accommodation. Below are the details of your eviction:</p>
-                    <ul style="line-height: 1.6;">
+                    <p>Dear <strong>${firstName} ${lastName}</strong>,</p>
+                    <p>We regret to inform you that you have been evicted from your accommodation.</p>
+                    <p><strong>Eviction Details:</strong></p>
+                    <ul>
                         <li><strong>Student ID:</strong> ${studentId}</li>
-                        <li><strong>Room ID:</strong> ${roomId}</li>
+                        <li><strong>Room:</strong> ${roomName} (ID: ${roomId})</li>
                         <li><strong>Reason:</strong> ${evictionReason}</li>
                         <li><strong>Notice Date:</strong> ${evictionNoticeDate}</li>
                         <li><strong>Notice Time:</strong> ${evictionNoticeTime}</li>
                     </ul>
-                    <p>If you have any questions regarding this decision, please contact the housing office immediately.</p>
-                    <p>Sincerely,<br/>Administration Team</p>
-                    <strong>09569775622</strong>
+                    <p>If you have any questions, please contact the housing office immediately.</p>
+                    <p>Best regards,<br><strong>Administration Team</strong></p>
+                    <p>📞 <strong>09569775622</strong></p>
                 </div>
-            `
+            `,
         };
 
+        // Send email
         await transporter.sendMail(mailOptions);
+
+
 
         // Delete the user account from the "users" collection
         await User.findByIdAndDelete(userId);
