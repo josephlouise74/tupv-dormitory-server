@@ -727,16 +727,14 @@ const getAllApplicationsById = async (req: Request, res: Response): Promise<Resp
 const updateApplicationStatus = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { applicationId } = req.params;
-        const { status, adminId, userId, roomId, roomName, interview, selectedRoom } = req.body;
+        const { status, adminId, userId, roomId, roomName, interview, selectedRoom, firstName, lastName, studentId } = req.body;
 
         console.log("Received request body:", req.body);
 
-        // Validate applicationId
         if (!mongoose.Types.ObjectId.isValid(applicationId)) {
             return res.status(400).json({ success: false, message: "Invalid application ID." });
         }
 
-        // Validate required fields
         if (!adminId || !userId) {
             return res.status(400).json({
                 success: false,
@@ -744,80 +742,25 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
             });
         }
 
-        // Find the application to get its current status
         const application = await Application.findById(applicationId);
         if (!application) {
             return res.status(404).json({ success: false, message: "Application not found." });
         }
 
         const previousStatus = application.status;
-
-        // Determine final status: if interview is true, override status to "for-interview"
         const finalStatus = interview ? "for-interview" : status;
 
-        // Update application status and selectedRoom
         const updatedApplication = await Application.findByIdAndUpdate(
             applicationId,
             {
                 $set: {
                     status: finalStatus,
-                    ...(selectedRoom && { selectedRoom }) // Only include if selectedRoom is provided
+                    ...(selectedRoom && { selectedRoom })
                 }
             },
             { new: true, runValidators: true }
         ).lean();
 
-        // Find the room directly using $elemMatch to identify the specific room
-        const dorm = await Dorm.findOne({
-            adminId,
-            "rooms._id": roomId
-        });
-
-        if (!dorm) {
-            return res.status(404).json({
-                success: false,
-                message: "Dorm or room not found for this admin."
-            });
-        }
-
-        // Get the room data before updating
-        const roomData = dorm.rooms.find(room => room._id.toString() === roomId);
-        if (!roomData) {
-            return res.status(404).json({ success: false, message: "Room not found in the dorm." });
-        }
-
-        let newMaxPax = roomData.maxPax;
-        // Determine new maxPax value based on status change
-        if (previousStatus !== finalStatus) {
-            if (finalStatus === "approved") {
-                // Decrease maxPax when approving an applicant
-                newMaxPax = Math.max(0, roomData.maxPax - 1);
-            } else if (finalStatus === "rejected" && previousStatus === "approved") {
-                // Increase maxPax when changing from approved to rejected
-                newMaxPax = roomData.maxPax + 1;
-            }
-        }
-
-        // Update the room's maxPax using direct MongoDB update with $ positional operator
-        await Dorm.updateOne(
-            {
-                adminId,
-                "rooms._id": new mongoose.Types.ObjectId(roomId)
-            },
-            {
-                $set: { "rooms.$.maxPax": newMaxPax }
-            }
-        );
-
-        // Fetch the updated room data
-        const updatedDorm = await Dorm.findOne({
-            adminId,
-            "rooms._id": new mongoose.Types.ObjectId(roomId)
-        });
-
-        const updatedRoomData = updatedDorm?.rooms.find(room => room._id.toString() === roomId);
-
-        // Update the user's information
         await User.findByIdAndUpdate(
             userId,
             {
@@ -827,18 +770,53 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
                     applicationId,
                     roomName,
                     status: finalStatus,
-                    ...(selectedRoom && { selectedRoom }) // Only include if selectedRoom is provided
+                    ...(selectedRoom && { selectedRoom })
                 }
             },
             { new: true, runValidators: true }
         );
 
+        let emailSubject = finalStatus === "approved" ? "Congratulations! Your Application is Approved" : "Important: Application Rejection Notice";
+        let emailBody = finalStatus === "approved" ? `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2 style="color: #28a745;">Application Approved</h2>
+                <p>Dear ${firstName} ${lastName},</p>
+                <p>We are pleased to inform you that your application for accommodation at TUPV Dormitory has been approved.</p>
+                <ul style="line-height: 1.6;">
+                    <li><strong>Application ID:</strong> ${applicationId}</li>
+                    <li><strong>Room Name:</strong> ${roomName || 'N/A'}</li>
+                </ul>
+                <p>Please visit the dormitory office for further instructions and move-in details.</p>
+                <p>Best regards,<br/>TUPV Dormitory Administration</p>
+            </div>
+        ` : `
+            <div style="font-family: Arial, sans-serif; padding: 20px;">
+                <h2 style="color: #8b2131;">Application Rejected</h2>
+                <p>Dear ${firstName} ${lastName},</p>
+                <p>We regret to inform you that your application for accommodation at TUPV Dormitory has been rejected.</p>
+                <ul style="line-height: 1.6;">
+                    <li><strong>Application ID:</strong> ${applicationId}</li>
+                    <li><strong>Room Name:</strong> ${roomName || 'N/A'}</li>
+                    <li><strong>Reason:</strong> Unfortunately, we are unable to accommodate your request at this time.</li>
+                </ul>
+                <p>If you have any questions regarding this decision, please contact the housing office immediately.</p>
+                <p>Sincerely,<br/>TUPV Dormitory Administration</p>
+            </div>
+        `;
+
+        const mailOptions = {
+            from: 'josephlouisedeleon22@gmail.com',
+            to: userId,
+            subject: emailSubject,
+            html: emailBody
+        };
+
+        await transporter.sendMail(mailOptions);
+
         return res.status(200).json({
             success: true,
             message: "Application status updated successfully.",
-            application: updatedApplication,
-            room: updatedRoomData,
-            updatedMaxPax: updatedRoomData?.maxPax
+            application: updatedApplication
         });
     } catch (error: any) {
         console.error("Error updating application status:", error);
@@ -2188,6 +2166,15 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             return res.status(400).json({
                 success: false,
                 message: "Student ID, email, first name, and last name are required",
+            });
+        }
+
+        // Check if student exists
+        const studentExists = await User.findById(studentId);
+        if (!studentExists) {
+            return res.status(404).json({
+                success: false,
+                message: "Student not found. Please check the student ID and try again.",
             });
         }
 
