@@ -12,5 +12,6 @@ router.get("/stats", userController.getAttendanceStats);
 
 router.get("/today/:studentId", userController.getTodayAttendance);
 
+router.patch("/seen-all/:userId", userController.markAllNoticesAsSeen);
 export default router;
 

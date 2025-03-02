@@ -57,6 +57,8 @@ router.delete("/delete-student/:userId", userController.deleteStudentById);
 /* router.patch("/undo-eviction/:userId", userController.undoEviction);
  */
 
+/* router.patch("/marked-all-read/:userId", userController.markAllNoticesAsSeen);
+ */
 router.post("/forgot-password/:email", userController.initiatePasswordReset);
 
 router.post("/verify-otp/:email", userController.verifyOTP);
@@ -72,6 +74,9 @@ router.patch("/update-my-user-details/:userId", userController.updateDetailsByUs
 router.get("/my-notification-evicted/:userId", userController.getMyNotificationEvicted);
 
 router.get("/student/:studentId", userController.getStudentById);
+
+
+router.get("/my-application/:userId", userController.getMyApplication);
 
 
 

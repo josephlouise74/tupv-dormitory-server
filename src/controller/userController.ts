@@ -1,9 +1,9 @@
+import { Application } from './../models/applications';
 import bcrypt from "bcrypt";
 import { Request, Response } from "express";
 import jwt from 'jsonwebtoken';
 import mongoose from "mongoose";
 import nodemailer from "nodemailer";
-import { Application } from "../models/applications";
 import Attendance from "../models/attendance";
 import Dorm from "../models/dorm";
 import Eviction from "../models/eviction";
@@ -722,6 +722,18 @@ const getAllApplicationsById = async (req: Request, res: Response): Promise<Resp
     }
 };
 
+const storeNoticePayment = async (data: any) => {
+    try {
+        // Create a new notification for NoticePayment
+        const noticePayment = new NoticePayment({ ...data, status: data.status });
+
+        // Save the notice payment
+        await noticePayment.save();
+        console.log("NoticePayment saved successfully.");
+    } catch (error) {
+        console.error("Error storing NoticePayment:", error);
+    }
+};
 
 
 
@@ -833,6 +845,7 @@ const updateApplicationStatus = async (req: Request, res: Response): Promise<Res
             },
             { new: true, runValidators: true }
         );
+
         let emailSubject = finalStatus === "approved" ? "Congratulations! Your Application is Approved" : "Important: Application Rejection Notice";
         let emailBody = finalStatus === "approved" ? `
             <div style="font-family: Arial, sans-serif; padding: 20px;">
@@ -1103,7 +1116,8 @@ const getAllPendingApplicationsTotal = async (req: Request, res: Response): Prom
 
 
 
-const sendNoticePaymentForStudent = async (req: Request, res: Response): Promise<Response> => {
+
+export const sendNoticePaymentForStudent = async (req: Request, res: Response): Promise<Response> => {
     try {
         const {
             userId,
@@ -1116,12 +1130,11 @@ const sendNoticePaymentForStudent = async (req: Request, res: Response): Promise
             lastName,
             phone,
             role,
-            roomId,
-            adminId,  // now required for dorm lookup
+            roomId
         } = req.body;
 
         // Validate required fields
-        if (!userId || !amount || !dueDate || !description || !studentId || !roomId || !adminId) {
+        if (!userId || !amount || !dueDate || !description || !studentId || !roomId) {
             return res.status(400).json({
                 success: false,
                 message: "All fields are required.",
@@ -1147,43 +1160,49 @@ const sendNoticePaymentForStudent = async (req: Request, res: Response): Promise
 
         await noticePayment.save();
 
+        // Send notice payment email notification to the student
+        const mailOptions = {
+            from: 'tupvdorm@gmail.com',
+            to: email,
+            subject: 'Notice of Payment Due - TUPV Dormitory',
+            html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #D9534F;">Notice of Payment Due</h2>
+            <p>Dear ${firstName} ${lastName},</p>
+            <p>This is a reminder that your payment for TUPV Dormitory accommodation is due. Please find the details below:</p>
+            <ul style="line-height: 1.6;">
+                <li><strong>Amount Due:</strong> PHP ${amount}</li>
+                <li><strong>Due Date:</strong> ${dueDate}</li>
+                <li><strong>Description:</strong> ${description}</li>
+            </ul>
+            <p>To avoid any inconvenience, please ensure that your payment is completed before the due date.</p>
+            <p>If you have any questions, feel free to contact us at <strong>09569775622</strong>.</p>
+            <p>Best regards,<br/>TUPV Dormitory Administration</p>
+        </div>
+    `
+        };
+
+        await transporter.sendMail(mailOptions);
+
         // Update the user's roomId
-        const updatedUser = await User.findByIdAndUpdate(
+        const user = await User.findByIdAndUpdate(
             userId,
             { roomId },
             { new: true }
         );
 
-        if (!updatedUser) {
+        if (!user) {
             return res.status(404).json({
                 success: false,
                 message: "User not found.",
             });
         }
 
-        // Find the dorm by adminId
-        let updatedMaxPax: number | undefined = undefined;
-        const dorm = await Dorm.findOne({ adminId });
-        if (dorm) {
-            // Find the specific room inside the dorm's rooms array by matching roomId
-            const roomIndex = dorm.rooms.findIndex(room => room.roomId.toString() === roomId);
-            if (roomIndex !== -1) {
-                dorm.rooms[roomIndex].maxPax += 1;
-                await dorm.save();
-                updatedMaxPax = dorm.rooms[roomIndex].maxPax;
-            } else {
-                console.warn(`Room with id ${roomId} not found in dorm for adminId ${adminId}.`);
-            }
-        } else {
-            console.warn(`Dorm not found for adminId: ${adminId}.`);
-        }
-
         return res.status(201).json({
             success: true,
             message: "Notice payment sent successfully.",
             noticePayment,
-            updatedUser,
-            updatedMaxPax
+            updatedUser: user
         });
 
     } catch (error: any) {
@@ -1249,6 +1268,60 @@ const getMyAllNoticePayments = async (req: Request, res: Response): Promise<Resp
         });
     }
 };
+
+
+const markAllNoticesAsSeen = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params;
+
+        // Validate userId is a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format."
+            });
+        }
+
+        // Count unseen notices
+        const unseenCount = await NoticePayment.countDocuments({ userId, unseen: "unseen" });
+
+        if (unseenCount === 0) {
+            return res.status(200).json({
+                success: true,
+                message: "No unseen notice payments.",
+                unseenCount: 0
+            });
+        }
+
+        // Ensure updates are correctly applied
+        const result = await NoticePayment.updateMany(
+            { userId, unseen: "unseen" },
+            { $set: { unseen: "seen" } },
+            { multi: true } // Ensure multiple documents are updated
+        );
+
+        if (result.modifiedCount === 0) {
+            return res.status(400).json({
+                success: false,
+                message: "No records updated. Check if documents match the criteria."
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "All notice payments marked as seen.",
+            updatedCount: result.modifiedCount,
+        });
+    } catch (error: any) {
+        console.error("Error marking notice payments as seen:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
 
 const getMyNotificationEvicted = async (req: Request, res: Response): Promise<Response> => {
     try {
@@ -2533,5 +2606,44 @@ const getAttendanceStats = async (req: Request, res: Response): Promise<Response
 };
 
 
+const getMyApplication = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { userId } = req.params;
 
-export default { createUser, signInUser, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance, rejectApplication };
+        // Validate userId as a valid MongoDB ObjectId
+        if (!mongoose.Types.ObjectId.isValid(userId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid user ID format.",
+            });
+        }
+
+        // Fetch user's application from "applications" collection
+        const application = await Application.findOne({ userId }).lean();
+
+        if (!application) {
+            return res.status(404).json({
+                success: false,
+                message: "Application not found.",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Application retrieved successfully.",
+            data: application, // Return only application data
+        });
+    } catch (error: any) {
+        console.error("Error fetching Application:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
+
+
+export default { createUser, signInUser, getMyApplication, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance, rejectApplication, markAllNoticesAsSeen };
