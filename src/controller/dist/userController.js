@@ -2077,26 +2077,29 @@ var date_fns_1 = require("date-fns"); // For date handling
  * Get all attendance records with pagination, filtering, and search.
  */
 var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var _a, page, limit, search, startDate, endDate, status, pageNumber, limitNumber, filters, searchTerm, totalRecords, totalPages, validPage, skip, attendances, error_38;
+    var _a, page, limit, search, date, status, studentId, sortBy, sortOrder, pageNumber, limitNumber, filters, inputDate, startOfDay_1, endOfDay_1, searchTerm, sortOptions, order, totalRecords, totalPages, validPage, skip, attendances, error_38;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
                 _b.trys.push([0, 3, , 4]);
-                _a = req.query, page = _a.page, limit = _a.limit, search = _a.search, startDate = _a.startDate, endDate = _a.endDate, status = _a.status;
+                _a = req.query, page = _a.page, limit = _a.limit, search = _a.search, date = _a.date, status = _a.status, studentId = _a.studentId, sortBy = _a.sortBy, sortOrder = _a.sortOrder;
                 pageNumber = Math.max(parseInt(page) || 1, 1);
                 limitNumber = Math.max(Math.min(parseInt(limit) || 10, 100), 1);
                 filters = {};
-                // Date range filter
-                if (startDate || endDate) {
-                    filters.date = {};
-                    if (startDate)
-                        filters.date.$gte = new Date(startDate);
-                    if (endDate)
-                        filters.date.$lte = new Date(endDate);
+                // Precise date filtering
+                if (date) {
+                    inputDate = new Date(date);
+                    startOfDay_1 = new Date(inputDate.setHours(0, 0, 0, 0));
+                    endOfDay_1 = new Date(inputDate.setHours(23, 59, 59, 999));
+                    filters.date = { $gte: startOfDay_1, $lte: endOfDay_1 };
                 }
                 // Status filter
                 if (status && ['checked-in', 'checked-out', 'absent'].includes(status)) {
                     filters.status = status;
+                }
+                // Student ID filter
+                if (studentId) {
+                    filters.studentId = { $regex: studentId, $options: "i" };
                 }
                 // Search filter on firstName, lastName, studentId, or email
                 if (search && search.trim()) {
@@ -2108,6 +2111,20 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                         { email: { $regex: searchTerm, $options: "i" } },
                     ];
                 }
+                sortOptions = { date: -1, checkInTime: -1 };
+                if (sortBy) {
+                    order = (sortOrder === null || sortOrder === void 0 ? void 0 : sortOrder.toLowerCase()) === 'asc' ? 1 : -1;
+                    switch (sortBy.toLowerCase()) {
+                        case 'date':
+                            sortOptions = { date: order, checkInTime: order };
+                            break;
+                        case 'studentid':
+                            sortOptions = { studentId: order, date: -1 };
+                            break;
+                        default:
+                            break;
+                    }
+                }
                 return [4 /*yield*/, attendance_1["default"].countDocuments(filters)];
             case 1:
                 totalRecords = _b.sent();
@@ -2115,7 +2132,7 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                 validPage = Math.min(pageNumber, totalPages);
                 skip = (validPage - 1) * limitNumber;
                 return [4 /*yield*/, attendance_1["default"].find(filters)
-                        .sort({ date: -1, checkInTime: -1 }) // Latest first
+                        .sort(sortOptions)
                         .skip(skip)
                         .limit(limitNumber)
                         .lean()];
@@ -2132,6 +2149,14 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                             totalPages: totalPages,
                             hasNextPage: validPage < totalPages,
                             hasPrevPage: validPage > 1
+                        },
+                        sortBy: sortBy || 'date',
+                        sortOrder: sortOrder || 'desc',
+                        appliedFilters: {
+                            date: date ? new Date(date).toISOString() : null,
+                            status: status || null,
+                            studentId: studentId || null,
+                            search: search || null
                         }
                     })];
             case 3:

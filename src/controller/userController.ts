@@ -2224,13 +2224,24 @@ import { endOfDay, startOfDay } from 'date-fns'; // For date handling
  */
 const getAllAttendances = async (req: Request, res: Response): Promise<Response> => {
     try {
-        const { page, limit, search, startDate, endDate, status } = req.query as {
+        const {
+            page,
+            limit,
+            search,
+            date,
+            status,
+            studentId, // Added studentId filter
+            sortBy,
+            sortOrder
+        } = req.query as {
             page?: string;
             limit?: string;
             search?: string;
-            startDate?: string;
-            endDate?: string;
+            date?: string;
             status?: string;
+            studentId?: string;
+            sortBy?: string;
+            sortOrder?: string;
         };
 
         // Parse pagination values with defaults and validation
@@ -2240,16 +2251,23 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
         // Build filters
         const filters: any = {};
 
-        // Date range filter
-        if (startDate || endDate) {
-            filters.date = {};
-            if (startDate) filters.date.$gte = new Date(startDate);
-            if (endDate) filters.date.$lte = new Date(endDate);
+        // Precise date filtering
+        if (date) {
+            const inputDate = new Date(date);
+            const startOfDay = new Date(inputDate.setHours(0, 0, 0, 0));
+            const endOfDay = new Date(inputDate.setHours(23, 59, 59, 999));
+
+            filters.date = { $gte: startOfDay, $lte: endOfDay };
         }
 
         // Status filter
         if (status && ['checked-in', 'checked-out', 'absent'].includes(status)) {
             filters.status = status;
+        }
+
+        // Student ID filter
+        if (studentId) {
+            filters.studentId = { $regex: studentId, $options: "i" };
         }
 
         // Search filter on firstName, lastName, studentId, or email
@@ -2263,15 +2281,33 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
             ];
         }
 
+        // Build sort options
+        let sortOptions: { [key: string]: 1 | -1 } = { date: -1, checkInTime: -1 };
+
+        if (sortBy) {
+            const order = sortOrder?.toLowerCase() === 'asc' ? 1 : -1;
+
+            switch (sortBy.toLowerCase()) {
+                case 'date':
+                    sortOptions = { date: order, checkInTime: order };
+                    break;
+                case 'studentid':
+                    sortOptions = { studentId: order, date: -1 };
+                    break;
+                default:
+                    break;
+            }
+        }
+
         // Get total count
         const totalRecords = await Attendance.countDocuments(filters);
         const totalPages = Math.ceil(totalRecords / limitNumber) || 1;
         const validPage = Math.min(pageNumber, totalPages);
         const skip = (validPage - 1) * limitNumber;
 
-        // Query attendances
+        // Query attendances with new sort options
         const attendances = await Attendance.find(filters)
-            .sort({ date: -1, checkInTime: -1 }) // Latest first
+            .sort(sortOptions)
             .skip(skip)
             .limit(limitNumber)
             .lean();
@@ -2288,6 +2324,14 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
                 hasNextPage: validPage < totalPages,
                 hasPrevPage: validPage > 1,
             },
+            sortBy: sortBy || 'date',
+            sortOrder: sortOrder || 'desc',
+            appliedFilters: {
+                date: date ? new Date(date).toISOString() : null,
+                status: status || null,
+                studentId: studentId || null,
+                search: search || null
+            }
         });
     } catch (error: any) {
         console.error("Error fetching attendance records:", error);
