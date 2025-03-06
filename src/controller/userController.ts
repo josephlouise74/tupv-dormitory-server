@@ -1141,6 +1141,10 @@ export const sendNoticePaymentForStudent = async (req: Request, res: Response): 
             });
         }
 
+        // Create Philippine time (UTC+8)
+        const philippineTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
+        const dateCreated = philippineTime.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+
         // Create a new notice payment document
         const noticePayment = new NoticePayment({
             userId,
@@ -1155,7 +1159,8 @@ export const sendNoticePaymentForStudent = async (req: Request, res: Response): 
             role,
             roomId,
             status: "pending",
-            createdAt: new Date()
+            createdAt: philippineTime,
+            dateCreated: dateCreated
         });
 
         await noticePayment.save();
@@ -1268,7 +1273,88 @@ const getMyAllNoticePayments = async (req: Request, res: Response): Promise<Resp
         });
     }
 };
+const getAllNoticePaymentsAdminSide = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { adminId } = req.params;
+        if (!mongoose.Types.ObjectId.isValid(adminId)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid admin ID format.",
+            });
+        }
 
+        const { page, limit, search, status, date } = req.query as {
+            page?: string;
+            limit?: string;
+            search?: string;
+            status?: string;
+            date?: string;
+        };
+
+        // Set default pagination values
+        const pageNumber = Math.max(parseInt(page || "1"), 1);
+        const limitNumber = Math.max(Math.min(parseInt(limit || "10"), 100), 1);
+        const skip = (pageNumber - 1) * limitNumber;
+
+        // Build the query object
+        const query: Record<string, any> = { adminId };
+
+        // Enhanced search functionality
+        if (search) {
+            query.$or = [
+                { firstName: { $regex: search, $options: "i" } },
+                { lastName: { $regex: search, $options: "i" } },
+                { studentId: { $regex: search, $options: "i" } }
+            ];
+        }
+
+        // Status filter
+        if (status && ["paid", "overdue", "pending"].includes(status)) {
+            query.status = status;
+        }
+
+        // Date filtering using dateCreated field with Philippine time
+        if (date) {
+            // Convert to Philippine time (UTC+8)
+            const philippineTime = new Date(new Date(date).getTime() + (8 * 60 * 60 * 1000));
+            const formattedDate = philippineTime.toISOString().split('T')[0];
+            query.dateCreated = formattedDate;
+        }
+
+        // Fetch payments with proper sorting
+        const [noticePayments, totalPayments] = await Promise.all([
+            NoticePayment.find(query)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limitNumber)
+                .lean(),
+            NoticePayment.countDocuments(query)
+        ]);
+
+        const totalPages = Math.ceil(totalPayments / limitNumber);
+
+        return res.status(200).json({
+            success: true,
+            message: "Notice payments retrieved successfully.",
+            data: noticePayments,
+            pagination: {
+                total: totalPayments,
+                page: pageNumber,
+                limit: limitNumber,
+                totalPages,
+                hasNextPage: pageNumber < totalPages,
+                hasPrevPage: pageNumber > 1,
+            },
+        });
+    } catch (error: any) {
+        console.error("Error fetching notice payments:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
 
 const markAllNoticesAsSeen = async (req: Request, res: Response): Promise<Response> => {
     try {
@@ -2219,6 +2305,7 @@ const updateEvictionStatus = async (req: Request, res: Response): Promise<Respon
 
 
 import { endOfDay, startOfDay } from 'date-fns'; // For date handling
+
 /**
  * Get all attendance records with pagination, filtering, and search.
  */
@@ -2230,9 +2317,9 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
             search,
             date,
             status,
-            studentId, // Added studentId filter
+            studentId,
             sortBy,
-            sortOrder
+            sortOrder,
         } = req.query as {
             page?: string;
             limit?: string;
@@ -2251,26 +2338,24 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
         // Build filters
         const filters: any = {};
 
-        // Precise date filtering
+        // Precise date filtering with Philippine time (UTC+8)
         if (date) {
-            const inputDate = new Date(date);
-            const startOfDay = new Date(inputDate.setHours(0, 0, 0, 0));
-            const endOfDay = new Date(inputDate.setHours(23, 59, 59, 999));
-
-            filters.date = { $gte: startOfDay, $lte: endOfDay };
+            const [year, month, day] = date.split("-").map(Number);
+            // Convert to Philippine time by adding 8 hours
+            const startOfDayPH = new Date(Date.UTC(year, month - 1, day, -8, 0, 0, 0)); // -8 to start at 00:00 PHT
+            const endOfDayPH = new Date(Date.UTC(year, month - 1, day, 15, 59, 59, 999)); // 15 (23-8) to end at 23:59 PHT
+            filters.date = { $gte: startOfDayPH, $lte: endOfDayPH };
         }
 
-        // Status filter
-        if (status && ['checked-in', 'checked-out', 'absent'].includes(status)) {
+        // Rest of the filters remain the same
+        if (status && ["checked-in", "checked-out", "absent"].includes(status)) {
             filters.status = status;
         }
 
-        // Student ID filter
         if (studentId) {
             filters.studentId = { $regex: studentId, $options: "i" };
         }
 
-        // Search filter on firstName, lastName, studentId, or email
         if (search && search.trim()) {
             const searchTerm = search.trim();
             filters.$or = [
@@ -2285,13 +2370,12 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
         let sortOptions: { [key: string]: 1 | -1 } = { date: -1, checkInTime: -1 };
 
         if (sortBy) {
-            const order = sortOrder?.toLowerCase() === 'asc' ? 1 : -1;
-
+            const order = sortOrder?.toLowerCase() === "asc" ? 1 : -1;
             switch (sortBy.toLowerCase()) {
-                case 'date':
+                case "date":
                     sortOptions = { date: order, checkInTime: order };
                     break;
-                case 'studentid':
+                case "studentid":
                     sortOptions = { studentId: order, date: -1 };
                     break;
                 default:
@@ -2299,13 +2383,12 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
             }
         }
 
-        // Get total count
+        // Rest of the code remains the same
         const totalRecords = await Attendance.countDocuments(filters);
         const totalPages = Math.ceil(totalRecords / limitNumber) || 1;
         const validPage = Math.min(pageNumber, totalPages);
         const skip = (validPage - 1) * limitNumber;
 
-        // Query attendances with new sort options
         const attendances = await Attendance.find(filters)
             .sort(sortOptions)
             .skip(skip)
@@ -2324,14 +2407,14 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
                 hasNextPage: validPage < totalPages,
                 hasPrevPage: validPage > 1,
             },
-            sortBy: sortBy || 'date',
-            sortOrder: sortOrder || 'desc',
+            sortBy: sortBy || "date",
+            sortOrder: sortOrder || "desc",
             appliedFilters: {
-                date: date ? new Date(date).toISOString() : null,
+                date: date || null,
                 status: status || null,
                 studentId: studentId || null,
-                search: search || null
-            }
+                search: search || null,
+            },
         });
     } catch (error: any) {
         console.error("Error fetching attendance records:", error);
@@ -2394,7 +2477,7 @@ const getTodayAttendance = async (req: Request, res: Response): Promise<Response
 const recordCheckIn = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { studentId } = req.params;
-        const { email, firstName, lastName, notes } = req.body;
+        const { email, firstName, lastName, notes, date } = req.body;
 
         // Validate required fields
         if (!studentId || !email || !firstName || !lastName) {
@@ -2413,18 +2496,19 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             });
         }
 
-        // Get today's boundaries
-        const today = new Date();
-        const todayStart = startOfDay(today);
-        const todayEnd = endOfDay(today);
+        // Convert to Philippine time (UTC+8)
+        const philippineTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
+        const dateCreated = philippineTime.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+
+        // Get today's boundaries in Philippine time
+        const todayStart = startOfDay(philippineTime);
+        const todayEnd = endOfDay(philippineTime);
 
         // Find the most recent attendance record for today for this student
         const existingRecord = await Attendance.findOne({
             studentId,
             date: { $gte: todayStart, $lte: todayEnd },
         }).sort({ createdAt: -1 });
-
-        const currentTime = new Date();
 
         // CASE 1: No record exists for today → Create a new record with checkInTime
         if (!existingRecord) {
@@ -2433,12 +2517,14 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                 firstName,
                 lastName,
                 email,
-                date: today, // Store the full date
-                checkInTime: currentTime,
+                date: philippineTime,
+                dateCreated,
+                checkInTime: philippineTime,
                 checkOutTime: null,
                 status: "checked-in",
                 notes: notes || "",
-                adminId: "67b6122b87e0d9aae35ffdd6", // default admin
+                adminId: "67b6122b87e0d9aae35ffdd6",
+                createdAt: philippineTime
             });
 
             await newAttendance.save();
@@ -2452,10 +2538,10 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
 
         // CASE 2: Record exists for today and checkInTime is set, but checkOutTime is missing → Update checkOutTime
         if (existingRecord.checkInTime && !existingRecord.checkOutTime) {
-            existingRecord.checkOutTime = currentTime;
+            existingRecord.checkOutTime = philippineTime;
             existingRecord.status = "checked-out";
-            // Calculate duration in hours
-            const durationMs = currentTime.getTime() - new Date(existingRecord.checkInTime).getTime();
+            // Calculate duration in hours using Philippine time
+            const durationMs = philippineTime.getTime() - new Date(existingRecord.checkInTime).getTime();
             const durationHours = durationMs / (1000 * 60 * 60);
             existingRecord.durationHours = parseFloat(durationHours.toFixed(2));
 
@@ -2473,19 +2559,21 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             });
         }
 
-        // CASE 3: Record exists for today with both checkInTime and checkOutTime → Create a new record (new check-in cycle)
+        // CASE 3: Record exists for today with both checkInTime and checkOutTime → Create a new record
         if (existingRecord.checkInTime && existingRecord.checkOutTime) {
             const newAttendance = new Attendance({
                 studentId,
                 firstName,
                 lastName,
                 email,
-                date: today, // still store today's date
-                checkInTime: currentTime,
+                date: philippineTime,
+                dateCreated,
+                checkInTime: philippineTime,
                 checkOutTime: null,
                 status: "checked-in",
                 notes: notes || "",
-                adminId: "67b6122b87e0d9aae35ffdd6", // default admin
+                adminId: "67b6122b87e0d9aae35ffdd6",
+                createdAt: philippineTime
             });
 
             await newAttendance.save();
@@ -2496,6 +2584,8 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                 data: newAttendance,
             });
         }
+
+
 
         // Fallback – should not reach here
         return res.status(400).json({
@@ -2589,9 +2679,19 @@ const getAttendanceStats = async (req: Request, res: Response): Promise<Response
             endDate?: string;
         };
 
-        // Default to this month if no dates provided
-        const start = startDate ? new Date(startDate) : startOfDay(new Date(new Date().setDate(1)));
-        const end = endDate ? new Date(endDate) : endOfDay(new Date());
+        // Convert to Philippine time (UTC+8)
+        const getPhilippineTime = (date: Date) => {
+            return new Date(date.getTime() + (8 * 60 * 60 * 1000));
+        };
+
+        // Default to this month if no dates provided, in Philippine time
+        const currentPhTime = getPhilippineTime(new Date());
+        const start = startDate
+            ? getPhilippineTime(new Date(startDate))
+            : startOfDay(new Date(currentPhTime.setDate(1)));
+        const end = endDate
+            ? getPhilippineTime(new Date(endDate))
+            : endOfDay(currentPhTime);
 
         // Aggregate stats by status
         const stats = await Attendance.aggregate([
@@ -2690,4 +2790,4 @@ const getMyApplication = async (req: Request, res: Response): Promise<Response> 
 
 
 
-export default { createUser, signInUser, getMyApplication, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance, rejectApplication, markAllNoticesAsSeen };
+export default { createUser, signInUser, getMyApplication, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance, rejectApplication, markAllNoticesAsSeen, getAllNoticePaymentsAdminSide };

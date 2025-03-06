@@ -7,7 +7,12 @@ router.post("/signup", userController.createUser);
 router.post("/signin", userController.signInUser);
 
 router.get("/students", userController.getAllStudents);
+
 router.get("/st", userController.getAllAttendances);
+
+
+router.get("/notice-payments-by-admin/:adminId", userController.getAllNoticePaymentsAdminSide);
+
 
 router.post("/applicationform", userController.submitApplicationFormStudent);
 

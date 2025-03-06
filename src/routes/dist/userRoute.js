@@ -7,6 +7,7 @@ router.post("/signup", userController_1["default"].createUser);
 router.post("/signin", userController_1["default"].signInUser);
 router.get("/students", userController_1["default"].getAllStudents);
 router.get("/st", userController_1["default"].getAllAttendances);
+router.get("/notice-payments-by-admin/:adminId", userController_1["default"].getAllNoticePaymentsAdminSide);
 router.post("/applicationform", userController_1["default"].submitApplicationFormStudent);
 router.patch("/reject-application/:applicationId", userController_1["default"].rejectApplication);
 router.patch("/update-eviction-status/:userId", userController_1["default"].updateEvictionStatus);

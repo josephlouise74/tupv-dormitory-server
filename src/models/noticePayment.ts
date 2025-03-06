@@ -25,6 +25,7 @@ interface INoticePayment extends Document {
     adminId?: string;
     unseen: UnseenStatus;
     status: PaymentStatus;
+    dateCreated: Date;
     paidDate?: Date; // Optional field to store payment date
 }
 
@@ -52,6 +53,7 @@ const noticePaymentSchema: Schema = new Schema(
             default: PaymentStatus.Pending,
         },
         paidDate: { type: Date, default: null }, // Field to store payment date
+        dateCreated: { type: Date, default: Date.now },
     },
     { timestamps: true }
 );

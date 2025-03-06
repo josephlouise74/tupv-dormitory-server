@@ -1082,7 +1082,7 @@ var getAllPendingApplicationsTotal = function (req, res) { return __awaiter(void
     });
 }); };
 exports.sendNoticePaymentForStudent = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var _a, userId, amount, dueDate, description, studentId, email, firstName, lastName, phone, role, roomId, noticePayment, mailOptions, user, error_21;
+    var _a, userId, amount, dueDate, description, studentId, email, firstName, lastName, phone, role, roomId, philippineTime, dateCreated, noticePayment, mailOptions, user, error_21;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
@@ -1095,6 +1095,8 @@ exports.sendNoticePaymentForStudent = function (req, res) { return __awaiter(voi
                             message: "All fields are required."
                         })];
                 }
+                philippineTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
+                dateCreated = philippineTime.toISOString().split('T')[0];
                 noticePayment = new noticePayment_1["default"]({
                     userId: userId,
                     studentId: studentId,
@@ -1108,7 +1110,8 @@ exports.sendNoticePaymentForStudent = function (req, res) { return __awaiter(voi
                     role: role,
                     roomId: roomId,
                     status: "pending",
-                    createdAt: new Date()
+                    createdAt: philippineTime,
+                    dateCreated: dateCreated
                 });
                 return [4 /*yield*/, noticePayment.save()];
             case 1:
@@ -1203,8 +1206,80 @@ var getMyAllNoticePayments = function (req, res) { return __awaiter(void 0, void
         }
     });
 }); };
+var getAllNoticePaymentsAdminSide = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
+    var adminId, _a, page, limit, search, status, date, pageNumber, limitNumber, skip, query, philippineTime, formattedDate, _b, noticePayments, totalPayments, totalPages, error_23;
+    return __generator(this, function (_c) {
+        switch (_c.label) {
+            case 0:
+                _c.trys.push([0, 2, , 3]);
+                adminId = req.params.adminId;
+                if (!mongoose_1["default"].Types.ObjectId.isValid(adminId)) {
+                    return [2 /*return*/, res.status(400).json({
+                            success: false,
+                            message: "Invalid admin ID format."
+                        })];
+                }
+                _a = req.query, page = _a.page, limit = _a.limit, search = _a.search, status = _a.status, date = _a.date;
+                pageNumber = Math.max(parseInt(page || "1"), 1);
+                limitNumber = Math.max(Math.min(parseInt(limit || "10"), 100), 1);
+                skip = (pageNumber - 1) * limitNumber;
+                query = { adminId: adminId };
+                // Enhanced search functionality
+                if (search) {
+                    query.$or = [
+                        { firstName: { $regex: search, $options: "i" } },
+                        { lastName: { $regex: search, $options: "i" } },
+                        { studentId: { $regex: search, $options: "i" } }
+                    ];
+                }
+                // Status filter
+                if (status && ["paid", "overdue", "pending"].includes(status)) {
+                    query.status = status;
+                }
+                // Date filtering using dateCreated field with Philippine time
+                if (date) {
+                    philippineTime = new Date(new Date(date).getTime() + (8 * 60 * 60 * 1000));
+                    formattedDate = philippineTime.toISOString().split('T')[0];
+                    query.dateCreated = formattedDate;
+                }
+                return [4 /*yield*/, Promise.all([
+                        noticePayment_1["default"].find(query)
+                            .sort({ createdAt: -1 })
+                            .skip(skip)
+                            .limit(limitNumber)
+                            .lean(),
+                        noticePayment_1["default"].countDocuments(query)
+                    ])];
+            case 1:
+                _b = _c.sent(), noticePayments = _b[0], totalPayments = _b[1];
+                totalPages = Math.ceil(totalPayments / limitNumber);
+                return [2 /*return*/, res.status(200).json({
+                        success: true,
+                        message: "Notice payments retrieved successfully.",
+                        data: noticePayments,
+                        pagination: {
+                            total: totalPayments,
+                            page: pageNumber,
+                            limit: limitNumber,
+                            totalPages: totalPages,
+                            hasNextPage: pageNumber < totalPages,
+                            hasPrevPage: pageNumber > 1
+                        }
+                    })];
+            case 2:
+                error_23 = _c.sent();
+                console.error("Error fetching notice payments:", error_23);
+                return [2 /*return*/, res.status(500).json({
+                        success: false,
+                        message: "Internal server error.",
+                        error: process.env.NODE_ENV === "production" ? undefined : error_23.message
+                    })];
+            case 3: return [2 /*return*/];
+        }
+    });
+}); };
 var markAllNoticesAsSeen = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var userId, unseenCount, result, error_23;
+    var userId, unseenCount, result, error_24;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1243,19 +1318,19 @@ var markAllNoticesAsSeen = function (req, res) { return __awaiter(void 0, void 0
                         updatedCount: result.modifiedCount
                     })];
             case 3:
-                error_23 = _a.sent();
-                console.error("Error marking notice payments as seen:", error_23);
+                error_24 = _a.sent();
+                console.error("Error marking notice payments as seen:", error_24);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_23.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_24.message
                     })];
             case 4: return [2 /*return*/];
         }
     });
 }); };
 var getMyNotificationEvicted = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var userId, _a, page, limit, pageNumber, limitNumber, skip, evictions, totalEvictions, totalPages, error_24;
+    var userId, _a, page, limit, pageNumber, limitNumber, skip, evictions, totalEvictions, totalPages, error_25;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
@@ -1297,19 +1372,19 @@ var getMyNotificationEvicted = function (req, res) { return __awaiter(void 0, vo
                         }
                     })];
             case 3:
-                error_24 = _b.sent();
-                console.error("Error fetching eviction notifications:", error_24);
+                error_25 = _b.sent();
+                console.error("Error fetching eviction notifications:", error_25);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_24.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_25.message
                     })];
             case 4: return [2 /*return*/];
         }
     });
 }); };
 var updateStatusOfNoticePayment = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var noticeId, _a, status, paidDate, validStatuses, updateData, noticePayment, error_25;
+    var noticeId, _a, status, paidDate, validStatuses, updateData, noticePayment, error_26;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
@@ -1353,19 +1428,19 @@ var updateStatusOfNoticePayment = function (req, res) { return __awaiter(void 0,
                         noticePayment: noticePayment
                     })];
             case 2:
-                error_25 = _b.sent();
-                console.error("Error updating payment status:", error_25);
+                error_26 = _b.sent();
+                console.error("Error updating payment status:", error_26);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_25.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_26.message
                     })];
             case 3: return [2 /*return*/];
         }
     });
 }); };
 var deleteApplication = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var applicationId, application, error_26;
+    var applicationId, application, error_27;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1395,19 +1470,19 @@ var deleteApplication = function (req, res) { return __awaiter(void 0, void 0, P
                         message: "Application deleted successfully."
                     })];
             case 3:
-                error_26 = _a.sent();
-                console.error("Error deleting application:", error_26);
+                error_27 = _a.sent();
+                console.error("Error deleting application:", error_27);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_26.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_27.message
                     })];
             case 4: return [2 /*return*/];
         }
     });
 }); };
 var sendStudentEvictionNotice = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var _a, userId, studentId, email, firstName, lastName, phone, roomId, roomName, adminId, applicationId, evictionReason, evictionNoticeDate, evictionNoticeTime, application, user, newEviction, mailOptions, dormUpdate, error_27;
+    var _a, userId, studentId, email, firstName, lastName, phone, roomId, roomName, adminId, applicationId, evictionReason, evictionNoticeDate, evictionNoticeTime, application, user, newEviction, mailOptions, dormUpdate, error_28;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
@@ -1505,12 +1580,12 @@ var sendStudentEvictionNotice = function (req, res) { return __awaiter(void 0, v
                         eviction: newEviction
                     })];
             case 10:
-                error_27 = _b.sent();
-                console.error("Error processing eviction:", error_27);
+                error_28 = _b.sent();
+                console.error("Error processing eviction:", error_28);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_27.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_28.message
                     })];
             case 11: return [2 /*return*/];
         }
@@ -1558,7 +1633,7 @@ var sendStudentEvictionNotice = function (req, res) { return __awaiter(void 0, v
     }
 }; */
 var deleteStudentById = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var userId, user, error_28;
+    var userId, user, error_29;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1594,19 +1669,19 @@ var deleteStudentById = function (req, res) { return __awaiter(void 0, void 0, P
                         message: "User and associated records deleted successfully."
                     })];
             case 5:
-                error_28 = _a.sent();
-                console.error("Error deleting user and associated data:", error_28);
+                error_29 = _a.sent();
+                console.error("Error deleting user and associated data:", error_29);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_28.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_29.message
                     })];
             case 6: return [2 /*return*/];
         }
     });
 }); };
 var updateApplicationDataWithInterviewScoring = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var applicationId, _a, userId, updateFields_1, user, existingApplication, requiredFields, updatedApplicationData, updatedUserData, updatedApplication, updatedUser, error_29;
+    var applicationId, _a, userId, updateFields_1, user, existingApplication, requiredFields, updatedApplicationData, updatedUserData, updatedApplication, updatedUser, error_30;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
@@ -1663,19 +1738,19 @@ var updateApplicationDataWithInterviewScoring = function (req, res) { return __a
                         userData: updatedUser
                     })];
             case 5:
-                error_29 = _b.sent();
-                console.error("Error updating application and user data:", error_29);
+                error_30 = _b.sent();
+                console.error("Error updating application and user data:", error_30);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV !== "production" ? error_29.message : undefined
+                        error: process.env.NODE_ENV !== "production" ? error_30.message : undefined
                     })];
             case 6: return [2 /*return*/];
         }
     });
 }); };
 var submitApplicationFormStudent = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var data, existingApplication, newApplication, error_30;
+    var data, existingApplication, newApplication, error_31;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1721,19 +1796,19 @@ var submitApplicationFormStudent = function (req, res) { return __awaiter(void 0
                         application: newApplication
                     })];
             case 5:
-                error_30 = _a.sent();
-                console.error("Error in submitApplicationFormStudent:", error_30);
+                error_31 = _a.sent();
+                console.error("Error in submitApplicationFormStudent:", error_31);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV !== "production" ? error_30.message : undefined
+                        error: process.env.NODE_ENV !== "production" ? error_31.message : undefined
                     })];
             case 6: return [2 /*return*/];
         }
     });
 }); };
 var updateDormsAndRoomsDetails = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var adminId, rooms, updatedDorm, error_31;
+    var adminId, rooms, updatedDorm, error_32;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1769,12 +1844,12 @@ var updateDormsAndRoomsDetails = function (req, res) { return __awaiter(void 0, 
                         dorm: updatedDorm
                     })];
             case 2:
-                error_31 = _a.sent();
-                console.error("Error updating dorm rooms:", error_31);
+                error_32 = _a.sent();
+                console.error("Error updating dorm rooms:", error_32);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error",
-                        error: process.env.NODE_ENV !== "production" ? error_31.message : undefined
+                        error: process.env.NODE_ENV !== "production" ? error_32.message : undefined
                     })];
             case 3: return [2 /*return*/];
         }
@@ -1786,7 +1861,7 @@ var generateOTP = function () {
 };
 // Email sending utility function with proper error handling
 var sendOTPEmail = function (email, otp) { return __awaiter(void 0, void 0, Promise, function () {
-    var mailOptions, error_32;
+    var mailOptions, error_33;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1804,15 +1879,15 @@ var sendOTPEmail = function (email, otp) { return __awaiter(void 0, void 0, Prom
                 _a.sent();
                 return [3 /*break*/, 4];
             case 3:
-                error_32 = _a.sent();
-                console.error('Error sending email:', error_32);
+                error_33 = _a.sent();
+                console.error('Error sending email:', error_33);
                 throw new Error('Failed to send OTP email');
             case 4: return [2 /*return*/];
         }
     });
 }); };
 var initiatePasswordReset = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var email, normalizedEmail, user, existingEmails, otp, otpExpiry, mailOptions, error_33;
+    var email, normalizedEmail, user, existingEmails, otp, otpExpiry, mailOptions, error_34;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1865,8 +1940,8 @@ var initiatePasswordReset = function (req, res) { return __awaiter(void 0, void 
                         message: "Verification code sent successfully"
                     })];
             case 6:
-                error_33 = _a.sent();
-                console.error("❌ Password reset initiation error:", error_33);
+                error_34 = _a.sent();
+                console.error("❌ Password reset initiation error:", error_34);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to send verification code"
@@ -1876,7 +1951,7 @@ var initiatePasswordReset = function (req, res) { return __awaiter(void 0, void 
     });
 }); };
 var verifyOTP = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var email, otp, normalizedEmail, user, error_34;
+    var email, otp, normalizedEmail, user, error_35;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1909,8 +1984,8 @@ var verifyOTP = function (req, res) { return __awaiter(void 0, void 0, Promise, 
                         userId: user._id
                     })];
             case 2:
-                error_34 = _a.sent();
-                console.error("OTP verification error:", error_34);
+                error_35 = _a.sent();
+                console.error("OTP verification error:", error_35);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to verify code"
@@ -1920,7 +1995,7 @@ var verifyOTP = function (req, res) { return __awaiter(void 0, void 0, Promise, 
     });
 }); };
 var setNewPassword = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var email, password, normalizedEmail, salt, hashedPassword, updatedUser, error_35;
+    var email, password, normalizedEmail, salt, hashedPassword, updatedUser, error_36;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -1957,8 +2032,8 @@ var setNewPassword = function (req, res) { return __awaiter(void 0, void 0, Prom
                         message: "Password reset successful"
                     })];
             case 4:
-                error_35 = _a.sent();
-                console.error("Password reset error:", error_35);
+                error_36 = _a.sent();
+                console.error("Password reset error:", error_36);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to reset password"
@@ -1968,7 +2043,7 @@ var setNewPassword = function (req, res) { return __awaiter(void 0, void 0, Prom
     });
 }); };
 var updateDetailsByUserId = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var userId, data, updateData, updatedUser, error_36;
+    var userId, data, updateData, updatedUser, error_37;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -2012,19 +2087,19 @@ var updateDetailsByUserId = function (req, res) { return __awaiter(void 0, void 
                         user: updatedUser
                     })];
             case 2:
-                error_36 = _a.sent();
-                console.error("Error updating details by userId:", error_36);
+                error_37 = _a.sent();
+                console.error("Error updating details by userId:", error_37);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to update user details",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_36.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_37.message
                     })];
             case 3: return [2 /*return*/];
         }
     });
 }); };
 var updateEvictionStatus = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var userId, evicted, updatedUser, error_37;
+    var userId, evicted, updatedUser, error_38;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -2061,12 +2136,12 @@ var updateEvictionStatus = function (req, res) { return __awaiter(void 0, void 0
                         user: updatedUser
                     })];
             case 2:
-                error_37 = _a.sent();
-                console.error("Error updating eviction status for user ID " + req.params.userId + ":", error_37);
+                error_38 = _a.sent();
+                console.error("Error updating eviction status for user ID " + req.params.userId + ":", error_38);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_37.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_38.message
                     })];
             case 3: return [2 /*return*/];
         }
@@ -2077,31 +2152,29 @@ var date_fns_1 = require("date-fns"); // For date handling
  * Get all attendance records with pagination, filtering, and search.
  */
 var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var _a, page, limit, search, date, status, studentId, sortBy, sortOrder, pageNumber, limitNumber, filters, inputDate, startOfDay_1, endOfDay_1, searchTerm, sortOptions, order, totalRecords, totalPages, validPage, skip, attendances, error_38;
-    return __generator(this, function (_b) {
-        switch (_b.label) {
+    var _a, page, limit, search, date, status, studentId, sortBy, sortOrder, pageNumber, limitNumber, filters, _b, year, month, day, startOfDayPH, endOfDayPH, searchTerm, sortOptions, order, totalRecords, totalPages, validPage, skip, attendances, error_39;
+    return __generator(this, function (_c) {
+        switch (_c.label) {
             case 0:
-                _b.trys.push([0, 3, , 4]);
+                _c.trys.push([0, 3, , 4]);
                 _a = req.query, page = _a.page, limit = _a.limit, search = _a.search, date = _a.date, status = _a.status, studentId = _a.studentId, sortBy = _a.sortBy, sortOrder = _a.sortOrder;
                 pageNumber = Math.max(parseInt(page) || 1, 1);
                 limitNumber = Math.max(Math.min(parseInt(limit) || 10, 100), 1);
                 filters = {};
-                // Precise date filtering
+                // Precise date filtering with Philippine time (UTC+8)
                 if (date) {
-                    inputDate = new Date(date);
-                    startOfDay_1 = new Date(inputDate.setHours(0, 0, 0, 0));
-                    endOfDay_1 = new Date(inputDate.setHours(23, 59, 59, 999));
-                    filters.date = { $gte: startOfDay_1, $lte: endOfDay_1 };
+                    _b = date.split("-").map(Number), year = _b[0], month = _b[1], day = _b[2];
+                    startOfDayPH = new Date(Date.UTC(year, month - 1, day, -8, 0, 0, 0));
+                    endOfDayPH = new Date(Date.UTC(year, month - 1, day, 15, 59, 59, 999));
+                    filters.date = { $gte: startOfDayPH, $lte: endOfDayPH };
                 }
-                // Status filter
-                if (status && ['checked-in', 'checked-out', 'absent'].includes(status)) {
+                // Rest of the filters remain the same
+                if (status && ["checked-in", "checked-out", "absent"].includes(status)) {
                     filters.status = status;
                 }
-                // Student ID filter
                 if (studentId) {
                     filters.studentId = { $regex: studentId, $options: "i" };
                 }
-                // Search filter on firstName, lastName, studentId, or email
                 if (search && search.trim()) {
                     searchTerm = search.trim();
                     filters.$or = [
@@ -2113,12 +2186,12 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                 }
                 sortOptions = { date: -1, checkInTime: -1 };
                 if (sortBy) {
-                    order = (sortOrder === null || sortOrder === void 0 ? void 0 : sortOrder.toLowerCase()) === 'asc' ? 1 : -1;
+                    order = (sortOrder === null || sortOrder === void 0 ? void 0 : sortOrder.toLowerCase()) === "asc" ? 1 : -1;
                     switch (sortBy.toLowerCase()) {
-                        case 'date':
+                        case "date":
                             sortOptions = { date: order, checkInTime: order };
                             break;
-                        case 'studentid':
+                        case "studentid":
                             sortOptions = { studentId: order, date: -1 };
                             break;
                         default:
@@ -2127,7 +2200,7 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                 }
                 return [4 /*yield*/, attendance_1["default"].countDocuments(filters)];
             case 1:
-                totalRecords = _b.sent();
+                totalRecords = _c.sent();
                 totalPages = Math.ceil(totalRecords / limitNumber) || 1;
                 validPage = Math.min(pageNumber, totalPages);
                 skip = (validPage - 1) * limitNumber;
@@ -2137,7 +2210,7 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                         .limit(limitNumber)
                         .lean()];
             case 2:
-                attendances = _b.sent();
+                attendances = _c.sent();
                 return [2 /*return*/, res.status(200).json({
                         success: true,
                         message: "Attendance records retrieved successfully.",
@@ -2150,22 +2223,22 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                             hasNextPage: validPage < totalPages,
                             hasPrevPage: validPage > 1
                         },
-                        sortBy: sortBy || 'date',
-                        sortOrder: sortOrder || 'desc',
+                        sortBy: sortBy || "date",
+                        sortOrder: sortOrder || "desc",
                         appliedFilters: {
-                            date: date ? new Date(date).toISOString() : null,
+                            date: date || null,
                             status: status || null,
                             studentId: studentId || null,
                             search: search || null
                         }
                     })];
             case 3:
-                error_38 = _b.sent();
-                console.error("Error fetching attendance records:", error_38);
+                error_39 = _c.sent();
+                console.error("Error fetching attendance records:", error_39);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to retrieve attendance records.",
-                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_38.message
+                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_39.message
                     })];
             case 4: return [2 /*return*/];
         }
@@ -2175,7 +2248,7 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
  * Get today's attendance for a specific student.
  */
 var getTodayAttendance = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var studentId, today, todayStart, todayEnd, attendanceRecord, error_39;
+    var studentId, today, todayStart, todayEnd, attendanceRecord, error_40;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -2209,12 +2282,12 @@ var getTodayAttendance = function (req, res) { return __awaiter(void 0, void 0, 
                                 : "checked-in"
                     })];
             case 2:
-                error_39 = _a.sent();
-                console.error("Error fetching today's attendance:", error_39);
+                error_40 = _a.sent();
+                console.error("Error fetching today's attendance:", error_40);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to retrieve today's attendance record",
-                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_39.message
+                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_40.message
                     })];
             case 3: return [2 /*return*/];
         }
@@ -2224,13 +2297,13 @@ var getTodayAttendance = function (req, res) { return __awaiter(void 0, void 0, 
  * Record student check-in.
  */
 var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var studentId, _a, email, firstName, lastName, notes, studentExists, today, todayStart, todayEnd, existingRecord, currentTime, newAttendance, durationMs, durationHours, newAttendance, error_40;
+    var studentId, _a, email, firstName, lastName, notes, date, studentExists, philippineTime, dateCreated, todayStart, todayEnd, existingRecord, newAttendance, durationMs, durationHours, newAttendance, error_41;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
                 _b.trys.push([0, 9, , 10]);
                 studentId = req.params.studentId;
-                _a = req.body, email = _a.email, firstName = _a.firstName, lastName = _a.lastName, notes = _a.notes;
+                _a = req.body, email = _a.email, firstName = _a.firstName, lastName = _a.lastName, notes = _a.notes, date = _a.date;
                 // Validate required fields
                 if (!studentId || !email || !firstName || !lastName) {
                     return [2 /*return*/, res.status(400).json({
@@ -2247,28 +2320,30 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                             message: "Student not found. Please check the student ID and try again."
                         })];
                 }
-                today = new Date();
-                todayStart = date_fns_1.startOfDay(today);
-                todayEnd = date_fns_1.endOfDay(today);
+                philippineTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
+                dateCreated = philippineTime.toISOString().split('T')[0];
+                todayStart = date_fns_1.startOfDay(philippineTime);
+                todayEnd = date_fns_1.endOfDay(philippineTime);
                 return [4 /*yield*/, attendance_1["default"].findOne({
                         studentId: studentId,
                         date: { $gte: todayStart, $lte: todayEnd }
                     }).sort({ createdAt: -1 })];
             case 2:
                 existingRecord = _b.sent();
-                currentTime = new Date();
                 if (!!existingRecord) return [3 /*break*/, 4];
                 newAttendance = new attendance_1["default"]({
                     studentId: studentId,
                     firstName: firstName,
                     lastName: lastName,
                     email: email,
-                    date: today,
-                    checkInTime: currentTime,
+                    date: philippineTime,
+                    dateCreated: dateCreated,
+                    checkInTime: philippineTime,
                     checkOutTime: null,
                     status: "checked-in",
                     notes: notes || "",
-                    adminId: "67b6122b87e0d9aae35ffdd6"
+                    adminId: "67b6122b87e0d9aae35ffdd6",
+                    createdAt: philippineTime
                 });
                 return [4 /*yield*/, newAttendance.save()];
             case 3:
@@ -2280,9 +2355,9 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                     })];
             case 4:
                 if (!(existingRecord.checkInTime && !existingRecord.checkOutTime)) return [3 /*break*/, 6];
-                existingRecord.checkOutTime = currentTime;
+                existingRecord.checkOutTime = philippineTime;
                 existingRecord.status = "checked-out";
-                durationMs = currentTime.getTime() - new Date(existingRecord.checkInTime).getTime();
+                durationMs = philippineTime.getTime() - new Date(existingRecord.checkInTime).getTime();
                 durationHours = durationMs / (1000 * 60 * 60);
                 existingRecord.durationHours = parseFloat(durationHours.toFixed(2));
                 if (notes) {
@@ -2305,12 +2380,14 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                     firstName: firstName,
                     lastName: lastName,
                     email: email,
-                    date: today,
-                    checkInTime: currentTime,
+                    date: philippineTime,
+                    dateCreated: dateCreated,
+                    checkInTime: philippineTime,
                     checkOutTime: null,
                     status: "checked-in",
                     notes: notes || "",
-                    adminId: "67b6122b87e0d9aae35ffdd6"
+                    adminId: "67b6122b87e0d9aae35ffdd6",
+                    createdAt: philippineTime
                 });
                 return [4 /*yield*/, newAttendance.save()];
             case 7:
@@ -2328,12 +2405,12 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                     data: existingRecord
                 })];
             case 9:
-                error_40 = _b.sent();
-                console.error("Error recording check-in/out:", error_40);
+                error_41 = _b.sent();
+                console.error("Error recording check-in/out:", error_41);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to record attendance",
-                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_40.message
+                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_41.message
                     })];
             case 10: return [2 /*return*/];
         }
@@ -2343,7 +2420,7 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
  * Record student check-out.
  */
 var recordCheckOut = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var studentId, notes, checkOutStatus, today, todayStart, todayEnd, attendanceRecord, checkOutTime, durationMs, durationHours, error_41;
+    var studentId, notes, checkOutStatus, today, todayStart, todayEnd, attendanceRecord, checkOutTime, durationMs, durationHours, error_42;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -2394,12 +2471,12 @@ var recordCheckOut = function (req, res) { return __awaiter(void 0, void 0, Prom
                         data: attendanceRecord
                     })];
             case 3:
-                error_41 = _a.sent();
-                console.error("Error recording check-out:", error_41);
+                error_42 = _a.sent();
+                console.error("Error recording check-out:", error_42);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to record check-out",
-                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_41.message
+                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_42.message
                     })];
             case 4: return [2 /*return*/];
         }
@@ -2409,14 +2486,22 @@ var recordCheckOut = function (req, res) { return __awaiter(void 0, void 0, Prom
  * Get attendance stats for a date range.
  */
 var getAttendanceStats = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var _a, startDate, endDate, start, end, stats, formattedStats_1, uniqueStudents, error_42;
+    var _a, startDate, endDate, getPhilippineTime, currentPhTime, start, end, stats, formattedStats_1, uniqueStudents, error_43;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
                 _b.trys.push([0, 3, , 4]);
                 _a = req.query, startDate = _a.startDate, endDate = _a.endDate;
-                start = startDate ? new Date(startDate) : date_fns_1.startOfDay(new Date(new Date().setDate(1)));
-                end = endDate ? new Date(endDate) : date_fns_1.endOfDay(new Date());
+                getPhilippineTime = function (date) {
+                    return new Date(date.getTime() + (8 * 60 * 60 * 1000));
+                };
+                currentPhTime = getPhilippineTime(new Date());
+                start = startDate
+                    ? getPhilippineTime(new Date(startDate))
+                    : date_fns_1.startOfDay(new Date(currentPhTime.setDate(1)));
+                end = endDate
+                    ? getPhilippineTime(new Date(endDate))
+                    : date_fns_1.endOfDay(currentPhTime);
                 return [4 /*yield*/, attendance_1["default"].aggregate([
                         {
                             $match: {
@@ -2461,19 +2546,19 @@ var getAttendanceStats = function (req, res) { return __awaiter(void 0, void 0, 
                         }
                     })];
             case 3:
-                error_42 = _b.sent();
-                console.error("Error fetching attendance statistics:", error_42);
+                error_43 = _b.sent();
+                console.error("Error fetching attendance statistics:", error_43);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Failed to retrieve attendance statistics",
-                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_42.message
+                        error: process.env.NODE_ENV === "production" ? "Internal server error" : error_43.message
                     })];
             case 4: return [2 /*return*/];
         }
     });
 }); };
 var getMyApplication = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var userId, application, error_43;
+    var userId, application, error_44;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -2501,15 +2586,15 @@ var getMyApplication = function (req, res) { return __awaiter(void 0, void 0, Pr
                         data: application
                     })];
             case 2:
-                error_43 = _a.sent();
-                console.error("Error fetching Application:", error_43);
+                error_44 = _a.sent();
+                console.error("Error fetching Application:", error_44);
                 return [2 /*return*/, res.status(500).json({
                         success: false,
                         message: "Internal server error.",
-                        error: process.env.NODE_ENV === "production" ? undefined : error_43.message
+                        error: process.env.NODE_ENV === "production" ? undefined : error_44.message
                     })];
             case 3: return [2 /*return*/];
         }
     });
 }); };
-exports["default"] = { createUser: createUser, signInUser: signInUser, getMyApplication: getMyApplication, getAllStudents: getAllStudents, createDorm: createDorm, getDormsByAdminId: getDormsByAdminId, updateDorm: updateDorm, deleteDormById: deleteDormById, getDormById: getDormById, getAllStudentsTotal: getAllStudentsTotal, getTotalDormsAndRooms: getTotalDormsAndRooms, getUserById: getUserById, getAllDormsForStudentView: getAllDormsForStudentView, requestRoomApplication: requestRoomApplication, getAllApplicationsById: getAllApplicationsById, updateApplicationStatus: updateApplicationStatus, scheduleInterviewApplication: scheduleInterviewApplication, getAllPendingApplicationsTotal: getAllPendingApplicationsTotal, sendNoticePaymentForStudent: exports.sendNoticePaymentForStudent, getMyAllNoticePayments: getMyAllNoticePayments, updateStatusOfNoticePayment: updateStatusOfNoticePayment, deleteApplication: deleteApplication, sendStudentEvictionNotice: sendStudentEvictionNotice, deleteStudentById: deleteStudentById, updateApplicationDataWithInterviewScoring: updateApplicationDataWithInterviewScoring, submitApplicationFormStudent: submitApplicationFormStudent, updateDormsAndRoomsDetails: updateDormsAndRoomsDetails, initiatePasswordReset: initiatePasswordReset, verifyOTP: verifyOTP, setNewPassword: setNewPassword, updateDetailsByUserId: updateDetailsByUserId, getMyNotificationEvicted: getMyNotificationEvicted, updateEvictionStatus: updateEvictionStatus, getStudentById: getStudentById, getAllAttendances: getAllAttendances, recordCheckIn: recordCheckIn, recordCheckOut: recordCheckOut, getAttendanceStats: getAttendanceStats, getTodayAttendance: getTodayAttendance, rejectApplication: rejectApplication, markAllNoticesAsSeen: markAllNoticesAsSeen };
+exports["default"] = { createUser: createUser, signInUser: signInUser, getMyApplication: getMyApplication, getAllStudents: getAllStudents, createDorm: createDorm, getDormsByAdminId: getDormsByAdminId, updateDorm: updateDorm, deleteDormById: deleteDormById, getDormById: getDormById, getAllStudentsTotal: getAllStudentsTotal, getTotalDormsAndRooms: getTotalDormsAndRooms, getUserById: getUserById, getAllDormsForStudentView: getAllDormsForStudentView, requestRoomApplication: requestRoomApplication, getAllApplicationsById: getAllApplicationsById, updateApplicationStatus: updateApplicationStatus, scheduleInterviewApplication: scheduleInterviewApplication, getAllPendingApplicationsTotal: getAllPendingApplicationsTotal, sendNoticePaymentForStudent: exports.sendNoticePaymentForStudent, getMyAllNoticePayments: getMyAllNoticePayments, updateStatusOfNoticePayment: updateStatusOfNoticePayment, deleteApplication: deleteApplication, sendStudentEvictionNotice: sendStudentEvictionNotice, deleteStudentById: deleteStudentById, updateApplicationDataWithInterviewScoring: updateApplicationDataWithInterviewScoring, submitApplicationFormStudent: submitApplicationFormStudent, updateDormsAndRoomsDetails: updateDormsAndRoomsDetails, initiatePasswordReset: initiatePasswordReset, verifyOTP: verifyOTP, setNewPassword: setNewPassword, updateDetailsByUserId: updateDetailsByUserId, getMyNotificationEvicted: getMyNotificationEvicted, updateEvictionStatus: updateEvictionStatus, getStudentById: getStudentById, getAllAttendances: getAllAttendances, recordCheckIn: recordCheckIn, recordCheckOut: recordCheckOut, getAttendanceStats: getAttendanceStats, getTodayAttendance: getTodayAttendance, rejectApplication: rejectApplication, markAllNoticesAsSeen: markAllNoticesAsSeen, getAllNoticePaymentsAdminSide: getAllNoticePaymentsAdminSide };
