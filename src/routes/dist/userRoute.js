@@ -26,6 +26,7 @@ router.patch("/application/:applicationId", userController_1["default"].updateAp
 router.patch("/application/interview/:applicationId", userController_1["default"].scheduleInterviewApplication);
 router.get("/applications/pendings/:adminId", userController_1["default"].getAllPendingApplicationsTotal);
 router.post("/notice-payment", userController_1["default"].sendNoticePaymentForStudent);
+router.post('/notice-payment/all-students', userController_1["default"].sendNoticePaymentForAllStudents);
 router.get("/notice-payments/:userId", userController_1["default"].getMyAllNoticePayments);
 router.patch("/update-status-payment/:noticeId", userController_1["default"].updateStatusOfNoticePayment);
 router["delete"]("/delete-application/:applicationId", userController_1["default"].deleteApplication);

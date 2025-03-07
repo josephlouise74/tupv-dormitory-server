@@ -49,6 +49,8 @@ router.get("/applications/pendings/:adminId", userController.getAllPendingApplic
 
 router.post("/notice-payment", userController.sendNoticePaymentForStudent);
 
+router.post('/notice-payment/all-students', userController.sendNoticePaymentForAllStudents);
+
 router.get("/notice-payments/:userId", userController.getMyAllNoticePayments);
 
 router.patch("/update-status-payment/:noticeId", userController.updateStatusOfNoticePayment);

@@ -14,6 +14,8 @@ export interface StudentCheckIn extends Document {
     notes?: string;
     durationHours?: number;
     checkOutStatus?: "completed" | "incomplete";
+    formattedCheckInTime: string;
+    formattedCheckOutTime: string;
 }
 
 // Define the Attendance Schema
@@ -76,6 +78,8 @@ const attendanceSchema = new Schema<StudentCheckIn>(
             enum: ["completed", "incomplete"],
             default: null,
         },
+        formattedCheckInTime: String,
+        formattedCheckOutTime: String
     },
     {
         timestamps: true, // Automatically creates createdAt & updatedAt fields

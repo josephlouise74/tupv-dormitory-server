@@ -1221,13 +1221,113 @@ export const sendNoticePaymentForStudent = async (req: Request, res: Response): 
 };
 
 
+const sendNoticePaymentForAllStudents = async (req: Request, res: Response): Promise<Response> => {
+    try {
+        const { amount, dueDate, description } = req.body;
+
+        // Validate required fields
+        if (!amount || !dueDate || !description) {
+            return res.status(400).json({
+                success: false,
+                message: "Amount, due date, and description are required.",
+            });
+        }
+
+        // Create Philippine time (UTC+8)
+        const philippineTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
+        const dateCreated = philippineTime.toISOString().split('T')[0];
+
+        // Find all users with role "student"
+        const students = await User.find({ role: "student" }).lean();
+
+        if (!students || students.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: "No students found in the system.",
+            });
+        }
+
+        const noticePayments = [];
+        const emailPromises = [];
+
+        // Create notice payments for each student
+        for (const student of students) {
+            // Create notice payment document
+            const noticePayment = new NoticePayment({
+                userId: student._id,
+                studentId: student.studentId,
+                amount,
+                dueDate,
+                description,
+                email: student.email,
+                firstName: student.firstName,
+                lastName: student.lastName,
+                phone: student.phone,
+                role: student.role,
+                roomId: student.roomId,
+                status: "pending",
+                createdAt: philippineTime,
+                dateCreated: dateCreated
+            });
+
+            // Save the notice payment
+            await noticePayment.save();
+            noticePayments.push(noticePayment);
+
+            // Prepare email for each student
+            const mailOptions = {
+                from: 'tupvdorm@gmail.com',
+                to: student.email,
+                subject: 'Notice of Payment Due - TUPV Dormitory',
+                html: `
+                    <div style="font-family: Arial, sans-serif; padding: 20px;">
+                        <h2 style="color: #D9534F;">Notice of Payment Due</h2>
+                        <p>Dear ${student.firstName} ${student.lastName},</p>
+                        <p>This is a reminder that your payment for TUPV Dormitory accommodation is due. Please find the details below:</p>
+                        <ul style="line-height: 1.6;">
+                            <li><strong>Amount Due:</strong> PHP ${amount}</li>
+                            <li><strong>Due Date:</strong> ${dueDate}</li>
+                            <li><strong>Description:</strong> ${description}</li>
+                        </ul>
+                        <p>To avoid any inconvenience, please ensure that your payment is completed before the due date.</p>
+                        <p>If you have any questions, feel free to contact us at <strong>09569775622</strong>.</p>
+                        <p>Best regards,<br/>TUPV Dormitory Administration</p>
+                    </div>
+                `
+            };
+
+            // Add email to promises array
+            emailPromises.push(transporter.sendMail(mailOptions));
+        }
+
+        // Send all emails concurrently
+        await Promise.all(emailPromises);
+
+        return res.status(201).json({
+            success: true,
+            message: `Notice payments sent successfully to ${students.length} students.`,
+            noticePayments,
+            totalStudents: students.length
+        });
+
+    } catch (error: any) {
+        console.error("Error sending notice payments to all students:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal server error.",
+            error: process.env.NODE_ENV === "production" ? undefined : error.message,
+        });
+    }
+};
+
+
 
 const getMyAllNoticePayments = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { userId } = req.params;
         const { page, limit } = req.query as { page: string, limit: string };
 
-        // Validate userId is a valid MongoDB ObjectId
+        // Validate userId is a valid MongoDB ObjectId  
         if (!mongoose.Types.ObjectId.isValid(userId)) {
             return res.status(400).json({
                 success: false,
@@ -2471,15 +2571,11 @@ const getTodayAttendance = async (req: Request, res: Response): Promise<Response
     }
 };
 
-/**
- * Record student check-in.
- */
 const recordCheckIn = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { studentId } = req.params;
-        const { email, firstName, lastName, notes, date } = req.body;
+        const { email, firstName, lastName, notes } = req.body;
 
-        // Validate required fields
         if (!studentId || !email || !firstName || !lastName) {
             return res.status(400).json({
                 success: false,
@@ -2487,8 +2583,7 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             });
         }
 
-        // Check if student exists
-        const studentExists = await User.findOne({ studentId: studentId });
+        const studentExists = await User.findOne({ studentId });
         if (!studentExists) {
             return res.status(404).json({
                 success: false,
@@ -2496,35 +2591,49 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             });
         }
 
-        // Convert to Philippine time (UTC+8)
-        const philippineTime = new Date(new Date().getTime() + (8 * 60 * 60 * 1000));
-        const dateCreated = philippineTime.toISOString().split('T')[0]; // Format: YYYY-MM-DD
+        const today = new Date();
+        const todayStart = startOfDay(today);
+        const todayEnd = endOfDay(today);
 
-        // Get today's boundaries in Philippine time
-        const todayStart = startOfDay(philippineTime);
-        const todayEnd = endOfDay(philippineTime);
-
-        // Find the most recent attendance record for today for this student
         const existingRecord = await Attendance.findOne({
             studentId,
             date: { $gte: todayStart, $lte: todayEnd },
         }).sort({ createdAt: -1 });
 
-        // CASE 1: No record exists for today → Create a new record with checkInTime
+        const philippineTime = new Date().toLocaleString("en-US", {
+            timeZone: "Asia/Manila",
+        });
+
+        const dateCreated = new Date(philippineTime).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        });
+
+        const formatTime = (date: Date) => {
+            return date.toLocaleString("en-US", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: true,
+            });
+        };
+
         if (!existingRecord) {
             const newAttendance = new Attendance({
                 studentId,
                 firstName,
                 lastName,
                 email,
-                date: philippineTime,
+                date: todayStart,
                 dateCreated,
-                checkInTime: philippineTime,
+                checkInTime: new Date(philippineTime),
                 checkOutTime: null,
                 status: "checked-in",
                 notes: notes || "",
-                adminId: "67b6122b87e0d9aae35ffdd6",
-                createdAt: philippineTime
+                adminId: new mongoose.Types.ObjectId("67b6122b87e0d9aae35ffdd6"),
+                createdAt: new Date(philippineTime),
+                formattedCheckInTime: formatTime(new Date(philippineTime)),
             });
 
             await newAttendance.save();
@@ -2532,17 +2641,22 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             return res.status(201).json({
                 success: true,
                 message: "New check-in recorded successfully",
-                data: newAttendance,
+                data: {
+                    ...newAttendance.toObject(),
+                    checkInTime: formatTime(new Date(philippineTime)),
+                },
             });
         }
 
-        // CASE 2: Record exists for today and checkInTime is set, but checkOutTime is missing → Update checkOutTime
         if (existingRecord.checkInTime && !existingRecord.checkOutTime) {
-            existingRecord.checkOutTime = philippineTime;
+            const checkOutTime = new Date(philippineTime);
+            existingRecord.checkOutTime = checkOutTime;
             existingRecord.status = "checked-out";
-            // Calculate duration in hours using Philippine time
-            const durationMs = philippineTime.getTime() - new Date(existingRecord.checkInTime).getTime();
-            const durationHours = durationMs / (1000 * 60 * 60);
+            existingRecord.formattedCheckOutTime = formatTime(checkOutTime);
+
+            const checkInDate = new Date(existingRecord.checkInTime);
+            const durationMs = checkOutTime.getTime() - checkInDate.getTime();
+            const durationHours = Math.max(0, durationMs / (1000 * 60 * 60));
             existingRecord.durationHours = parseFloat(durationHours.toFixed(2));
 
             if (notes) {
@@ -2550,30 +2664,38 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                     ? `${existingRecord.notes}\nCheckout notes: ${notes}`
                     : `Checkout notes: ${notes}`;
             }
+
             await existingRecord.save();
 
             return res.status(200).json({
                 success: true,
                 message: "Check-out recorded successfully",
-                data: existingRecord,
+                data: {
+                    ...existingRecord.toObject(),
+                    checkInTime: existingRecord.formattedCheckInTime,
+                    checkOutTime: formatTime(checkOutTime),
+                },
             });
         }
 
-        // CASE 3: Record exists for today with both checkInTime and checkOutTime → Create a new record
         if (existingRecord.checkInTime && existingRecord.checkOutTime) {
+            const timestamp = new Date().getTime();
+
             const newAttendance = new Attendance({
                 studentId,
                 firstName,
                 lastName,
                 email,
-                date: philippineTime,
+                date: todayStart,
                 dateCreated,
-                checkInTime: philippineTime,
+                checkInTime: new Date(philippineTime),
                 checkOutTime: null,
                 status: "checked-in",
                 notes: notes || "",
-                adminId: "67b6122b87e0d9aae35ffdd6",
-                createdAt: philippineTime
+                adminId: new mongoose.Types.ObjectId("67b6122b87e0d9aae35ffdd6"),
+                createdAt: new Date(philippineTime),
+                formattedCheckInTime: formatTime(new Date(philippineTime)),
+                checkInSequence: timestamp,
             });
 
             await newAttendance.save();
@@ -2581,13 +2703,13 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             return res.status(201).json({
                 success: true,
                 message: "New check-in cycle started successfully",
-                data: newAttendance,
+                data: {
+                    ...newAttendance.toObject(),
+                    checkInTime: formatTime(new Date(philippineTime)),
+                },
             });
         }
 
-
-
-        // Fallback – should not reach here
         return res.status(400).json({
             success: false,
             message: "Unexpected attendance record state",
@@ -2602,7 +2724,6 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
         });
     }
 };
-
 
 /**
  * Record student check-out.
@@ -2790,4 +2911,4 @@ const getMyApplication = async (req: Request, res: Response): Promise<Response> 
 
 
 
-export default { createUser, signInUser, getMyApplication, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance, rejectApplication, markAllNoticesAsSeen, getAllNoticePaymentsAdminSide };
+export default { createUser, signInUser, getMyApplication, getAllStudents, createDorm, getDormsByAdminId, updateDorm, deleteDormById, getDormById, getAllStudentsTotal, getTotalDormsAndRooms, getUserById, getAllDormsForStudentView, requestRoomApplication, getAllApplicationsById, updateApplicationStatus, scheduleInterviewApplication, getAllPendingApplicationsTotal, sendNoticePaymentForStudent, getMyAllNoticePayments, updateStatusOfNoticePayment, deleteApplication, sendStudentEvictionNotice, deleteStudentById, updateApplicationDataWithInterviewScoring, submitApplicationFormStudent, updateDormsAndRoomsDetails, initiatePasswordReset, verifyOTP, setNewPassword, updateDetailsByUserId, getMyNotificationEvicted, updateEvictionStatus, getStudentById, getAllAttendances, recordCheckIn, recordCheckOut, getAttendanceStats, getTodayAttendance, rejectApplication, markAllNoticesAsSeen, getAllNoticePaymentsAdminSide, sendNoticePaymentForAllStudents };
