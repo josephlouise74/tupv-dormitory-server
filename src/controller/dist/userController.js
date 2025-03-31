@@ -994,13 +994,13 @@ var rejectApplication = function (req, res) { return __awaiter(void 0, void 0, P
     });
 }); };
 var scheduleInterviewApplication = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var applicationId, _a, date, time, firstName, lastName, email, updatedApplication, mailOptions, error_19;
+    var applicationId, _a, date, time, name, email, updatedApplication, mailOptions, error_19;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
                 _b.trys.push([0, 3, , 4]);
                 applicationId = req.params.applicationId;
-                _a = req.body, date = _a.date, time = _a.time, firstName = _a.firstName, lastName = _a.lastName, email = _a.email;
+                _a = req.body, date = _a.date, time = _a.time, name = _a.name, email = _a.email;
                 console.log("Received request body:", time);
                 console.log("Received applicationId:", applicationId);
                 // Validate applicationId
@@ -1025,7 +1025,7 @@ var scheduleInterviewApplication = function (req, res) { return __awaiter(void 0
                     from: 'tupvdorm@gmail.com',
                     to: email,
                     subject: 'Scheduled Interview - TUPV Dormitory',
-                    html: "\n                <div style=\"font-family: Arial, sans-serif; padding: 20px;\">\n                    <h2 style=\"color: #0056b3;\">Interview Schedule</h2>\n                <p>Dear " + firstName + " " + lastName + ",</p>\n                <p>We are pleased to inform you that your interview for the TUPV Dormitory accommodation has been scheduled. Below are the details:</p>\n                <ul style=\"line-height: 1.6;\">\n                    <li><strong>Application ID:</strong> " + applicationId + "</li>\n                    <li><strong>Interview Date:</strong> " + date + "</li>\n                    <li><strong>Interview Time:</strong> " + time + "</li>\n                </ul>\n                <p>Please make sure to be present at the designated time. If you have any questions, feel free to contact us at <strong>09569775622</strong>.</p>\n                <p>Best regards,<br/>TUPV Dormitory Administration</p>\n                </div>\n            "
+                    html: "\n                <div style=\"font-family: Arial, sans-serif; padding: 20px;\">\n                    <h2 style=\"color: #0056b3;\">Interview Schedule</h2>\n                <p>Dear " + name + ",</p>\n                <p>We are pleased to inform you that your interview for the TUPV Dormitory accommodation has been scheduled. Below are the details:</p>\n                <ul style=\"line-height: 1.6;\">\n                    <li><strong>Application ID:</strong> " + applicationId + "</li>\n                    <li><strong>Interview Date:</strong> " + date + "</li>\n                    <li><strong>Interview Time:</strong> " + time + "</li>\n                </ul>\n                <p>Please make sure to be present at the designated time. If you have any questions, feel free to contact us at <strong>09569775622</strong>.</p>\n                <p>Best regards,<br/>TUPV Dormitory Administration</p>\n                </div>\n            "
                 };
                 return [4 /*yield*/, transporter.sendMail(mailOptions)];
             case 2:

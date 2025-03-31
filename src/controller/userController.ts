@@ -1018,7 +1018,7 @@ const rejectApplication = async (req: Request, res: Response): Promise<Response>
 const scheduleInterviewApplication = async (req: Request, res: Response): Promise<Response> => {
     try {
         const { applicationId } = req.params; // Get applicationId from params
-        const { date, time, firstName, lastName, email } = req.body; // Get date and time from request body
+        const { date, time, name, email } = req.body; // Get date and time from request body
         console.log("Received request body:", time);
         console.log("Received applicationId:", applicationId);
         // Validate applicationId
@@ -1050,7 +1050,7 @@ const scheduleInterviewApplication = async (req: Request, res: Response): Promis
             html: `
                 <div style="font-family: Arial, sans-serif; padding: 20px;">
                     <h2 style="color: #0056b3;">Interview Schedule</h2>
-                <p>Dear ${firstName} ${lastName},</p>
+                <p>Dear ${name},</p>
                 <p>We are pleased to inform you that your interview for the TUPV Dormitory accommodation has been scheduled. Below are the details:</p>
                 <ul style="line-height: 1.6;">
                     <li><strong>Application ID:</strong> ${applicationId}</li>
