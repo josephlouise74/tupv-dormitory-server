@@ -150,11 +150,11 @@ var createUser = function (req, res) { return __awaiter(void 0, void 0, Promise,
     });
 }); };
 var signInUser = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var _a, email, password, normalizedEmail, user, isMatch, token, error_2;
+    var _a, email, password, normalizedEmail, evictedUser, user, isMatch, token, error_2;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
-                _b.trys.push([0, 3, , 4]);
+                _b.trys.push([0, 4, , 5]);
                 _a = req.body, email = _a.email, password = _a.password;
                 console.log("Sign-in request received:", req.body);
                 // Validate required fields
@@ -165,8 +165,21 @@ var signInUser = function (req, res) { return __awaiter(void 0, void 0, Promise,
                         })];
                 }
                 normalizedEmail = email.toLowerCase();
-                return [4 /*yield*/, user_1["default"].findOne({ email: normalizedEmail })];
+                return [4 /*yield*/, eviction_1["default"].findOne({ email: normalizedEmail })];
             case 1:
+                evictedUser = _b.sent();
+                if (evictedUser) {
+                    return [2 /*return*/, res.status(403).json({
+                            success: false,
+                            message: "This account has been disabled due to eviction. Please contact the dormitory administration for more information.",
+                            evictionDetails: {
+                                date: evictedUser.evictionNoticeDate,
+                                reason: evictedUser.evictionReason
+                            }
+                        })];
+                }
+                return [4 /*yield*/, user_1["default"].findOne({ email: normalizedEmail })];
+            case 2:
                 user = _b.sent();
                 if (!user) {
                     return [2 /*return*/, res.status(400).json({
@@ -175,7 +188,7 @@ var signInUser = function (req, res) { return __awaiter(void 0, void 0, Promise,
                         })];
                 }
                 return [4 /*yield*/, bcrypt_1["default"].compare(password, user.password)];
-            case 2:
+            case 3:
                 isMatch = _b.sent();
                 if (!isMatch) {
                     return [2 /*return*/, res.status(400).json({
@@ -208,7 +221,7 @@ var signInUser = function (req, res) { return __awaiter(void 0, void 0, Promise,
                             evictionReason: user.evictionReason
                         }
                     })];
-            case 3:
+            case 4:
                 error_2 = _b.sent();
                 console.error("Error signing in user:", error_2);
                 return [2 /*return*/, res.status(500).json({
@@ -216,7 +229,7 @@ var signInUser = function (req, res) { return __awaiter(void 0, void 0, Promise,
                         message: "Internal server error.",
                         error: error_2.message
                     })];
-            case 4: return [2 /*return*/];
+            case 5: return [2 /*return*/];
         }
     });
 }); };

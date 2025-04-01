@@ -117,7 +117,21 @@ const signInUser = async (req: Request, res: Response): Promise<any> => {
         // Normalize email
         const normalizedEmail = email.toLowerCase();
 
-        // Find user by email
+        // First check if user exists in evictions collection
+        const evictedUser = await Eviction.findOne({ email: normalizedEmail });
+
+        if (evictedUser) {
+            return res.status(403).json({
+                success: false,
+                message: "This account has been disabled due to eviction. Please contact the dormitory administration for more information.",
+                evictionDetails: {
+                    date: evictedUser.evictionNoticeDate,
+                    reason: evictedUser.evictionReason
+                }
+            });
+        }
+
+        // Continue with normal sign in process
         const user = await User.findOne({ email: normalizedEmail });
 
         if (!user) {
