@@ -2397,7 +2397,7 @@ var getTodayAttendance = function (req, res) { return __awaiter(void 0, void 0, 
     });
 }); };
 var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var studentId, _a, email, firstName, lastName, notes, studentExists, today, todayStart, todayEnd, existingRecord, philippineTime, dateCreated, formatTime, newAttendance, checkOutTime, checkInDate, durationMs, durationHours, timestamp, newAttendance, error_42;
+    var studentId, _a, email, firstName, lastName, notes, studentExists, philippineTime, todayStart, todayEnd, existingRecord, dateCreated, formatTime, newAttendance, checkOutTime, checkInDate, durationMs, durationHours, timestamp, newAttendance, error_42;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
@@ -2419,19 +2419,20 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                             message: "Student not found. Please check the student ID and try again."
                         })];
                 }
-                today = new Date();
-                todayStart = date_fns_1.startOfDay(today);
-                todayEnd = date_fns_1.endOfDay(today);
+                philippineTime = new Date(new Date().toLocaleString("en-US", {
+                    timeZone: "Asia/Manila"
+                }));
+                todayStart = new Date(philippineTime);
+                todayStart.setHours(0, 0, 0, 0);
+                todayEnd = new Date(philippineTime);
+                todayEnd.setHours(23, 59, 59, 999);
                 return [4 /*yield*/, attendance_1["default"].findOne({
                         studentId: studentId,
                         date: { $gte: todayStart, $lte: todayEnd }
                     }).sort({ createdAt: -1 })];
             case 2:
                 existingRecord = _b.sent();
-                philippineTime = new Date().toLocaleString("en-US", {
-                    timeZone: "Asia/Manila"
-                });
-                dateCreated = new Date(philippineTime).toLocaleDateString("en-US", {
+                dateCreated = philippineTime.toLocaleDateString("en-US", {
                     year: "numeric",
                     month: "2-digit",
                     day: "2-digit"
@@ -2441,7 +2442,8 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                         hour: "2-digit",
                         minute: "2-digit",
                         second: "2-digit",
-                        hour12: true
+                        hour12: true,
+                        timeZone: "Asia/Manila"
                     });
                 };
                 if (!!existingRecord) return [3 /*break*/, 4];
@@ -2452,13 +2454,13 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                     email: email,
                     date: todayStart,
                     dateCreated: dateCreated,
-                    checkInTime: new Date(philippineTime),
+                    checkInTime: philippineTime,
                     checkOutTime: null,
                     status: "checked-in",
                     notes: notes || "",
                     adminId: new mongoose_1["default"].Types.ObjectId("67b6122b87e0d9aae35ffdd6"),
-                    createdAt: new Date(philippineTime),
-                    formattedCheckInTime: formatTime(new Date(philippineTime))
+                    createdAt: philippineTime,
+                    formattedCheckInTime: formatTime(philippineTime)
                 });
                 return [4 /*yield*/, newAttendance.save()];
             case 3:
@@ -2466,11 +2468,11 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                 return [2 /*return*/, res.status(201).json({
                         success: true,
                         message: "New check-in recorded successfully",
-                        data: __assign(__assign({}, newAttendance.toObject()), { checkInTime: formatTime(new Date(philippineTime)) })
+                        data: __assign(__assign({}, newAttendance.toObject()), { checkInTime: formatTime(philippineTime) })
                     })];
             case 4:
                 if (!(existingRecord.checkInTime && !existingRecord.checkOutTime)) return [3 /*break*/, 6];
-                checkOutTime = new Date(philippineTime);
+                checkOutTime = philippineTime;
                 existingRecord.checkOutTime = checkOutTime;
                 existingRecord.status = "checked-out";
                 existingRecord.formattedCheckOutTime = formatTime(checkOutTime);
@@ -2501,13 +2503,13 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                     email: email,
                     date: todayStart,
                     dateCreated: dateCreated,
-                    checkInTime: new Date(philippineTime),
+                    checkInTime: philippineTime,
                     checkOutTime: null,
                     status: "checked-in",
                     notes: notes || "",
                     adminId: new mongoose_1["default"].Types.ObjectId("67b6122b87e0d9aae35ffdd6"),
-                    createdAt: new Date(philippineTime),
-                    formattedCheckInTime: formatTime(new Date(philippineTime)),
+                    createdAt: philippineTime,
+                    formattedCheckInTime: formatTime(philippineTime),
                     checkInSequence: timestamp
                 });
                 return [4 /*yield*/, newAttendance.save()];
@@ -2516,7 +2518,7 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                 return [2 /*return*/, res.status(201).json({
                         success: true,
                         message: "New check-in cycle started successfully",
-                        data: __assign(__assign({}, newAttendance.toObject()), { checkInTime: formatTime(new Date(philippineTime)) })
+                        data: __assign(__assign({}, newAttendance.toObject()), { checkInTime: formatTime(philippineTime) })
                     })];
             case 8: return [2 /*return*/, res.status(400).json({
                     success: false,

@@ -2605,20 +2605,23 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             });
         }
 
-        const today = new Date();
-        const todayStart = startOfDay(today);
-        const todayEnd = endOfDay(today);
+        // Get current Philippine time
+        const philippineTime = new Date(new Date().toLocaleString("en-US", {
+            timeZone: "Asia/Manila"
+        }));
+
+        // Get start and end of day in Philippine time
+        const todayStart = new Date(philippineTime);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date(philippineTime);
+        todayEnd.setHours(23, 59, 59, 999);
 
         const existingRecord = await Attendance.findOne({
             studentId,
             date: { $gte: todayStart, $lte: todayEnd },
         }).sort({ createdAt: -1 });
 
-        const philippineTime = new Date().toLocaleString("en-US", {
-            timeZone: "Asia/Manila",
-        });
-
-        const dateCreated = new Date(philippineTime).toLocaleDateString("en-US", {
+        const dateCreated = philippineTime.toLocaleDateString("en-US", {
             year: "numeric",
             month: "2-digit",
             day: "2-digit",
@@ -2630,6 +2633,7 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                 minute: "2-digit",
                 second: "2-digit",
                 hour12: true,
+                timeZone: "Asia/Manila"
             });
         };
 
@@ -2641,13 +2645,13 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                 email,
                 date: todayStart,
                 dateCreated,
-                checkInTime: new Date(philippineTime),
+                checkInTime: philippineTime,
                 checkOutTime: null,
                 status: "checked-in",
                 notes: notes || "",
                 adminId: new mongoose.Types.ObjectId("67b6122b87e0d9aae35ffdd6"),
-                createdAt: new Date(philippineTime),
-                formattedCheckInTime: formatTime(new Date(philippineTime)),
+                createdAt: philippineTime,
+                formattedCheckInTime: formatTime(philippineTime),
             });
 
             await newAttendance.save();
@@ -2657,13 +2661,13 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                 message: "New check-in recorded successfully",
                 data: {
                     ...newAttendance.toObject(),
-                    checkInTime: formatTime(new Date(philippineTime)),
+                    checkInTime: formatTime(philippineTime),
                 },
             });
         }
 
         if (existingRecord.checkInTime && !existingRecord.checkOutTime) {
-            const checkOutTime = new Date(philippineTime);
+            const checkOutTime = philippineTime;
             existingRecord.checkOutTime = checkOutTime;
             existingRecord.status = "checked-out";
             existingRecord.formattedCheckOutTime = formatTime(checkOutTime);
@@ -2702,13 +2706,13 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                 email,
                 date: todayStart,
                 dateCreated,
-                checkInTime: new Date(philippineTime),
+                checkInTime: philippineTime,
                 checkOutTime: null,
                 status: "checked-in",
                 notes: notes || "",
                 adminId: new mongoose.Types.ObjectId("67b6122b87e0d9aae35ffdd6"),
-                createdAt: new Date(philippineTime),
-                formattedCheckInTime: formatTime(new Date(philippineTime)),
+                createdAt: philippineTime,
+                formattedCheckInTime: formatTime(philippineTime),
                 checkInSequence: timestamp,
             });
 
@@ -2719,7 +2723,7 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
                 message: "New check-in cycle started successfully",
                 data: {
                     ...newAttendance.toObject(),
-                    checkInTime: formatTime(new Date(philippineTime)),
+                    checkInTime: formatTime(philippineTime),
                 },
             });
         }
