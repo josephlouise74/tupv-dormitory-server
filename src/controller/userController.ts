@@ -2455,9 +2455,9 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
         // Precise date filtering with Philippine time (UTC+8)
         if (date) {
             const [year, month, day] = date.split("-").map(Number);
-            // Convert to Philippine time by adding 8 hours
-            const startOfDayPH = new Date(Date.UTC(year, month - 1, day, -8, 0, 0, 0)); // -8 to start at 00:00 PHT
-            const endOfDayPH = new Date(Date.UTC(year, month - 1, day, 15, 59, 59, 999)); // 15 (23-8) to end at 23:59 PHT
+            // Create dates in Philippine timezone
+            const startOfDayPH = new Date(year, month - 1, day, 0, 0, 0, 0);
+            const endOfDayPH = new Date(year, month - 1, day, 23, 59, 59, 999);
             filters.date = { $gte: startOfDayPH, $lte: endOfDayPH };
         }
 
@@ -2497,7 +2497,6 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
             }
         }
 
-        // Rest of the code remains the same
         const totalRecords = await Attendance.countDocuments(filters);
         const totalPages = Math.ceil(totalRecords / limitNumber) || 1;
         const validPage = Math.min(pageNumber, totalPages);
@@ -2509,10 +2508,52 @@ const getAllAttendances = async (req: Request, res: Response): Promise<Response>
             .limit(limitNumber)
             .lean();
 
+        // Format the times in Philippine time for each attendance record
+        const formattedAttendances = attendances.map(attendance => {
+            const formattedRecord = { ...attendance };
+
+            // Format check-in time
+            if (attendance.checkInTime) {
+                const checkInDate = new Date(attendance.checkInTime);
+                formattedRecord.formattedCheckInTime = checkInDate.toLocaleString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: true,
+                    timeZone: "Asia/Manila"
+                });
+            }
+
+            // Format check-out time
+            if (attendance.checkOutTime) {
+                const checkOutDate = new Date(attendance.checkOutTime);
+                formattedRecord.formattedCheckOutTime = checkOutDate.toLocaleString("en-US", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    second: "2-digit",
+                    hour12: true,
+                    timeZone: "Asia/Manila"
+                });
+            }
+
+            // Format date
+            if (attendance.date) {
+                const date = new Date(attendance.date);
+                formattedRecord.formattedDate = date.toLocaleString("en-US", {
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                    timeZone: "Asia/Manila"
+                });
+            }
+
+            return formattedRecord;
+        });
+
         return res.status(200).json({
             success: true,
             message: "Attendance records retrieved successfully.",
-            attendances,
+            attendances: formattedAttendances,
             pagination: {
                 total: totalRecords,
                 page: validPage,
@@ -2606,9 +2647,8 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
         }
 
         // Get current Philippine time
-        const philippineTime = new Date(new Date().toLocaleString("en-US", {
-            timeZone: "Asia/Manila"
-        }));
+        const now = new Date();
+        const philippineTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
 
         // Get start and end of day in Philippine time
         const todayStart = new Date(philippineTime);
@@ -2627,6 +2667,7 @@ const recordCheckIn = async (req: Request, res: Response): Promise<Response> => 
             day: "2-digit",
         });
 
+        // Improved time formatting function
         const formatTime = (date: Date) => {
             return date.toLocaleString("en-US", {
                 hour: "2-digit",

@@ -60,8 +60,18 @@ var attendanceSchema = new mongoose_1.Schema({
         "enum": ["completed", "incomplete"],
         "default": null
     },
-    formattedCheckInTime: String,
-    formattedCheckOutTime: String,
+    formattedCheckInTime: {
+        type: String,
+        "default": null
+    },
+    formattedCheckOutTime: {
+        type: String,
+        "default": null
+    },
+    formattedDate: {
+        type: String,
+        "default": null
+    },
     checkInSequence: {
         type: Number,
         "default": 1,

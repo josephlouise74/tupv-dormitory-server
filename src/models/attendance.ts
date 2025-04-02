@@ -14,8 +14,9 @@ export interface StudentCheckIn extends Document {
     notes?: string;
     durationHours?: number;
     checkOutStatus?: "completed" | "incomplete";
-    formattedCheckInTime: string;
-    formattedCheckOutTime: string;
+    formattedCheckInTime?: string;
+    formattedCheckOutTime?: string;
+    formattedDate?: string;
     checkInSequence?: number;
 }
 
@@ -79,8 +80,18 @@ const attendanceSchema = new Schema<StudentCheckIn>(
             enum: ["completed", "incomplete"],
             default: null,
         },
-        formattedCheckInTime: String,
-        formattedCheckOutTime: String,
+        formattedCheckInTime: {
+            type: String,
+            default: null
+        },
+        formattedCheckOutTime: {
+            type: String,
+            default: null
+        },
+        formattedDate: {
+            type: String,
+            default: null
+        },
         checkInSequence: {
             type: Number,
             default: 1,

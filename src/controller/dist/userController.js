@@ -2255,7 +2255,7 @@ var date_fns_1 = require("date-fns"); // For date handling
  * Get all attendance records with pagination, filtering, and search.
  */
 var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var _a, page, limit, search, date, status, studentId, sortBy, sortOrder, pageNumber, limitNumber, filters, _b, year, month, day, startOfDayPH, endOfDayPH, searchTerm, sortOptions, order, totalRecords, totalPages, validPage, skip, attendances, error_40;
+    var _a, page, limit, search, date, status, studentId, sortBy, sortOrder, pageNumber, limitNumber, filters, _b, year, month, day, startOfDayPH, endOfDayPH, searchTerm, sortOptions, order, totalRecords, totalPages, validPage, skip, attendances, formattedAttendances, error_40;
     return __generator(this, function (_c) {
         switch (_c.label) {
             case 0:
@@ -2267,8 +2267,8 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                 // Precise date filtering with Philippine time (UTC+8)
                 if (date) {
                     _b = date.split("-").map(Number), year = _b[0], month = _b[1], day = _b[2];
-                    startOfDayPH = new Date(Date.UTC(year, month - 1, day, -8, 0, 0, 0));
-                    endOfDayPH = new Date(Date.UTC(year, month - 1, day, 15, 59, 59, 999));
+                    startOfDayPH = new Date(year, month - 1, day, 0, 0, 0, 0);
+                    endOfDayPH = new Date(year, month - 1, day, 23, 59, 59, 999);
                     filters.date = { $gte: startOfDayPH, $lte: endOfDayPH };
                 }
                 // Rest of the filters remain the same
@@ -2314,10 +2314,46 @@ var getAllAttendances = function (req, res) { return __awaiter(void 0, void 0, P
                         .lean()];
             case 2:
                 attendances = _c.sent();
+                formattedAttendances = attendances.map(function (attendance) {
+                    var formattedRecord = __assign({}, attendance);
+                    // Format check-in time
+                    if (attendance.checkInTime) {
+                        var checkInDate = new Date(attendance.checkInTime);
+                        formattedRecord.formattedCheckInTime = checkInDate.toLocaleString("en-US", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                            hour12: true,
+                            timeZone: "Asia/Manila"
+                        });
+                    }
+                    // Format check-out time
+                    if (attendance.checkOutTime) {
+                        var checkOutDate = new Date(attendance.checkOutTime);
+                        formattedRecord.formattedCheckOutTime = checkOutDate.toLocaleString("en-US", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                            second: "2-digit",
+                            hour12: true,
+                            timeZone: "Asia/Manila"
+                        });
+                    }
+                    // Format date
+                    if (attendance.date) {
+                        var date_1 = new Date(attendance.date);
+                        formattedRecord.formattedDate = date_1.toLocaleString("en-US", {
+                            year: "numeric",
+                            month: "2-digit",
+                            day: "2-digit",
+                            timeZone: "Asia/Manila"
+                        });
+                    }
+                    return formattedRecord;
+                });
                 return [2 /*return*/, res.status(200).json({
                         success: true,
                         message: "Attendance records retrieved successfully.",
-                        attendances: attendances,
+                        attendances: formattedAttendances,
                         pagination: {
                             total: totalRecords,
                             page: validPage,
@@ -2397,7 +2433,7 @@ var getTodayAttendance = function (req, res) { return __awaiter(void 0, void 0, 
     });
 }); };
 var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promise, function () {
-    var studentId, _a, email, firstName, lastName, notes, studentExists, philippineTime, todayStart, todayEnd, existingRecord, dateCreated, formatTime, newAttendance, checkOutTime, checkInDate, durationMs, durationHours, timestamp, newAttendance, error_42;
+    var studentId, _a, email, firstName, lastName, notes, studentExists, now, philippineTime, todayStart, todayEnd, existingRecord, dateCreated, formatTime, newAttendance, checkOutTime, checkInDate, durationMs, durationHours, timestamp, newAttendance, error_42;
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
@@ -2419,9 +2455,8 @@ var recordCheckIn = function (req, res) { return __awaiter(void 0, void 0, Promi
                             message: "Student not found. Please check the student ID and try again."
                         })];
                 }
-                philippineTime = new Date(new Date().toLocaleString("en-US", {
-                    timeZone: "Asia/Manila"
-                }));
+                now = new Date();
+                philippineTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Manila" }));
                 todayStart = new Date(philippineTime);
                 todayStart.setHours(0, 0, 0, 0);
                 todayEnd = new Date(philippineTime);
