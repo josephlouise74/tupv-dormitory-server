@@ -61,12 +61,17 @@ var attendanceSchema = new mongoose_1.Schema({
         "default": null
     },
     formattedCheckInTime: String,
-    formattedCheckOutTime: String
+    formattedCheckOutTime: String,
+    checkInSequence: {
+        type: Number,
+        "default": 1,
+        required: true
+    }
 }, {
     timestamps: true
 });
-// Compound index to enforce unique record per student per day
-attendanceSchema.index({ studentId: 1, date: 1 }, { unique: true });
+// Drop any existing indexes to ensure clean state
+attendanceSchema.index({ studentId: 1, date: 1, checkInSequence: 1 }, { unique: true });
 // Create and export the model
 var Attendance = mongoose_1["default"].model("Attendance", attendanceSchema);
 exports["default"] = Attendance;

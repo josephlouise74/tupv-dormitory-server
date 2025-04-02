@@ -16,6 +16,7 @@ export interface StudentCheckIn extends Document {
     checkOutStatus?: "completed" | "incomplete";
     formattedCheckInTime: string;
     formattedCheckOutTime: string;
+    checkInSequence?: number;
 }
 
 // Define the Attendance Schema
@@ -79,15 +80,20 @@ const attendanceSchema = new Schema<StudentCheckIn>(
             default: null,
         },
         formattedCheckInTime: String,
-        formattedCheckOutTime: String
+        formattedCheckOutTime: String,
+        checkInSequence: {
+            type: Number,
+            default: 1,
+            required: true
+        }
     },
     {
         timestamps: true, // Automatically creates createdAt & updatedAt fields
     }
 );
 
-// Compound index to enforce unique record per student per day
-attendanceSchema.index({ studentId: 1, date: 1 }, { unique: true });
+// Drop any existing indexes to ensure clean state
+attendanceSchema.index({ studentId: 1, date: 1, checkInSequence: 1 }, { unique: true });
 
 // Create and export the model
 const Attendance = mongoose.model<StudentCheckIn>("Attendance", attendanceSchema);
